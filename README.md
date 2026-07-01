@@ -76,7 +76,7 @@ tests pass.
 | 4 | Remaining scanners (performance, security, automation) | ✅ done |
 | 5 | Dashboard core | ✅ done |
 | 6 | Generator (port prototype) + dashboard UX overhaul | ✅ done |
-| 7 | PR impact analyser + LLM layer | ⏳ |
+| 7 | PR impact analyser + LLM layer | ✅ done |
 | 8 | Ticketing | ⏳ |
 | 9 | Correlation polish + trends | ⏳ |
 

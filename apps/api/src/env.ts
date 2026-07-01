@@ -5,6 +5,9 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   PORT: z.coerce.number().int().positive().default(3001),
   HOST: z.string().default('0.0.0.0'),
+  // Optional at boot; required only to run the impact analyser (spec §6.5, §7).
+  ANTHROPIC_API_KEY: z.string().optional(),
+  GITHUB_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

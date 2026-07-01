@@ -24,6 +24,8 @@
     "@qa-prism/core": "workspace:*",
     "@qa-prism/db": "workspace:*",
     "@qa-prism/generator": "workspace:*",
+    "@qa-prism/impact-analyser": "workspace:*",
+    "@qa-prism/llm": "workspace:*",
     "@qa-prism/scanner-accessibility": "workspace:*",
     "@qa-prism/scanner-automation": "workspace:*",
     "@qa-prism/scanner-performance": "workspace:*",

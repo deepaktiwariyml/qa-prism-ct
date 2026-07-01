@@ -2,10 +2,40 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { z } from 'zod';
 import { SelectionSchema } from '@qa-prism/core';
-import { getPrisma } from '@qa-prism/db';
+import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
+import { analyzePr } from '@qa-prism/impact-analyser';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
+
+const ImpactBody = z.object({
+  prUrl: z.string().min(1),
+  githubToken: z.string().optional(),
+});
+
+/** Attach existing-finding ids that overlap an impact area's files/name. */
+function crossLinkFindings(
+  area: { name: string; relatedFiles: string[] },
+  findings: Array<{ id: string; tags: string[]; location: unknown }>,
+): string[] {
+  const files = area.relatedFiles.map((f) => f.toLowerCase());
+  const nameTokens = area.name
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((t) => t.length > 3);
+  const ids = new Set<string>();
+  for (const f of findings) {
+    const path = String((f.location as { path?: string } | null)?.path ?? '').toLowerCase();
+    const tags = f.tags.map((t) => t.toLowerCase());
+    const fileMatch = files.some((rf) => {
+      const base = rf.split('/').pop() ?? rf;
+      return base.length > 0 && (path.includes(base) || (path.length > 0 && rf.includes(path)));
+    });
+    const tagMatch = nameTokens.some((tok) => tags.includes(tok));
+    if (fileMatch || tagMatch) ids.add(f.id);
+  }
+  return [...ids].slice(0, 20);
+}
 
 const CreateScanBody = z.object({
   name: z.string().optional(),
@@ -83,6 +113,59 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     reply.header('Content-Type', 'application/zip');
     reply.header('Content-Disposition', `attachment; filename="${result.rootName}.zip"`);
     return reply.send(zip);
+  });
+
+  // PR impact analyser (spec §6.5): fetch the diff, ask Claude for risk-ranked
+  // areas, cross-link to existing findings, persist an ImpactReport.
+  app.post('/impact', async (req, reply) => {
+    const parsed = ImpactBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
+    const githubToken = parsed.data.githubToken || process.env.GITHUB_TOKEN;
+
+    let result;
+    try {
+      result = await analyzePr({ prUrl: parsed.data.prUrl, githubToken });
+    } catch (err) {
+      // Bad URL, GitHub error, or missing ANTHROPIC_API_KEY — surface clearly.
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+
+    const value = `${result.owner}/${result.repo}`;
+    const target =
+      (await prisma.target.findFirst({ where: { kind: 'repo', value } })) ??
+      (await prisma.target.create({ data: { name: value, kind: 'repo', value } }));
+
+    const findings = await prisma.finding.findMany({
+      take: 1000,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, tags: true, location: true },
+    });
+    const areas = result.areas.map((a) => ({
+      ...a,
+      relatedFindingIds: crossLinkFindings(a, findings),
+    }));
+
+    const report = await prisma.impactReport.create({
+      data: {
+        targetId: target.id,
+        prUrl: parsed.data.prUrl,
+        prNumber: result.prNumber,
+        status: 'done',
+        areas: areas as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      id: report.id,
+      prUrl: parsed.data.prUrl,
+      prNumber: result.prNumber,
+      repo: value,
+      title: result.title,
+      areas,
+      limitations: result.limitations,
+    };
   });
 
   // Poll a scan: status, findings, and score once computed.

@@ -1,3 +1,6 @@
-// @qa-prism/llm — Anthropic client wrapper + versioned prompt templates (Phase 7)
-// Phase 0 placeholder. Implemented in a later build phase (see spec §10).
-export const PACKAGE = '@qa-prism/llm' as const;
+// @qa-prism/llm — the one place Claude is called (spec §7).
+export { createLlmClient } from './client.js';
+export type { LlmClient, LlmClientOptions, CreateMessage, CompleteArgs, CompleteJsonArgs } from './client.js';
+export { LlmError } from './errors.js';
+export { extractJson } from './json.js';
+export { IMPACT_ANALYSIS_SYSTEM, buildImpactAnalysisPrompt } from './prompts/impact-analysis.js';

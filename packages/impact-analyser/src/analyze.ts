@@ -1,0 +1,121 @@
+import { z } from 'zod';
+import { SeveritySchema, type ImpactArea } from '@qa-prism/core';
+import {
+  buildImpactAnalysisPrompt,
+  createLlmClient,
+  IMPACT_ANALYSIS_SYSTEM,
+  type LlmClient,
+} from '@qa-prism/llm';
+import { fetchPr, type ChangedFile, type FetchImpl } from './github.js';
+import { parseGitHubPrUrl } from './parse-url.js';
+
+/** Max total patch characters sent to the LLM (bounded context — spec §7). */
+const MAX_PATCH_CHARS = 14_000;
+
+const AnalysisSchema = z.object({
+  areas: z.array(
+    z.object({
+      name: z.string(),
+      riskLevel: SeveritySchema,
+      reason: z.string(),
+      suggestedTests: z.array(z.string()),
+      relatedFiles: z.array(z.string()),
+    }),
+  ),
+});
+
+export interface AnalyzeInput {
+  prUrl: string;
+  githubToken?: string;
+}
+
+export interface AnalyzeDeps {
+  llm?: LlmClient;
+  fetchImpl?: FetchImpl;
+}
+
+export interface ImpactResult {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  title: string;
+  areas: Array<Omit<ImpactArea, 'relatedFindingIds'>>;
+  changedFiles: string[];
+  limitations: string[];
+}
+
+/** Bound the diff we send: keep whole patches until the budget is spent. */
+function boundPatches(files: ChangedFile[]): { files: ChangedFile[]; truncated: boolean } {
+  let budget = MAX_PATCH_CHARS;
+  let truncated = false;
+  const out: ChangedFile[] = [];
+  for (const f of files) {
+    if (!f.patch) {
+      out.push(f);
+      continue;
+    }
+    if (budget <= 0) {
+      out.push({ ...f, patch: undefined });
+      truncated = true;
+      continue;
+    }
+    if (f.patch.length > budget) {
+      out.push({ ...f, patch: `${f.patch.slice(0, budget)}\n… (patch truncated)` });
+      truncated = true;
+      budget = 0;
+    } else {
+      out.push(f);
+      budget -= f.patch.length;
+    }
+  }
+  return { files: out, truncated };
+}
+
+/**
+ * Analyse a GitHub PR into a risk-ranked list of manual-test areas (spec §6.5).
+ * Fetches the diff, bounds it, and asks Claude for a schema-validated report.
+ *
+ * Dependency analysis is changed-files-first: we don't clone the repo, so we
+ * don't compute a reverse-dependency graph — noted in `limitations`.
+ */
+export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Promise<ImpactResult> {
+  const ref = parseGitHubPrUrl(input.prUrl);
+  if (!ref) {
+    throw new Error(`Not a GitHub pull request URL: ${input.prUrl}`);
+  }
+
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const llm = deps.llm ?? createLlmClient();
+
+  const pr = await fetchPr(ref, input.githubToken, fetchImpl);
+  const { files, truncated } = boundPatches(pr.files);
+
+  const limitations: string[] = [
+    'Dependency analysis is changed-files-first — a full reverse-dependency graph requires cloning the repo.',
+  ];
+  if (truncated) limitations.push('The diff was large and was truncated to fit the token budget.');
+
+  const prompt = buildImpactAnalysisPrompt({
+    title: pr.title,
+    body: pr.body,
+    changedFiles: files,
+    dependents: [],
+    truncatedNote: truncated ? 'Some diffs were truncated.' : undefined,
+  });
+
+  const result = await llm.completeJSON({
+    system: IMPACT_ANALYSIS_SYSTEM,
+    prompt,
+    schema: AnalysisSchema,
+  });
+
+  return {
+    owner: ref.owner,
+    repo: ref.repo,
+    prNumber: ref.number,
+    title: pr.title,
+    areas: result.areas,
+    changedFiles: pr.files.map((f) => f.filename),
+    limitations,
+  };
+}

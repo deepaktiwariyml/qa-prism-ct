@@ -1,3 +1,3 @@
-// @qa-prism/impact-analyser — GitHub PR -> dep graph -> LLM -> impact report (Phase 7)
-// Phase 0 placeholder. Implemented in a later build phase (see spec §10).
-export const PACKAGE = '@qa-prism/impact-analyser' as const;
+// @qa-prism/impact-analyser — GitHub PR → bounded diff → Claude → impact report (spec §6.5).
+export { analyzePr, type AnalyzeInput, type AnalyzeDeps, type ImpactResult } from './analyze.js';
+export { parseGitHubPrUrl, type PrRef } from './parse-url.js';
