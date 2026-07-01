@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { z } from 'zod';
+import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma } from '@qa-prism/db';
+import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
 
@@ -59,6 +61,28 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     await queue.add('scan', { scanId: scan.id, target, options });
 
     return reply.code(202).send({ scanId: scan.id, status: scan.status });
+  });
+
+  // Framework generator (spec §6.7): the dashboard dropdowns read the cells,
+  // then POST a selection to download a generated framework as a zip.
+  app.get('/generator/cells', async () => {
+    const index = await loadRegistry();
+    return index.cells;
+  });
+
+  app.post('/generator/generate', async (req, reply) => {
+    const parsed = SelectionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid selection', issues: parsed.error.issues });
+    }
+    const result = await generate(parsed.data);
+    if (!result.matched || !result.outDir || !result.rootName) {
+      return reply.code(422).send({ error: result.reason ?? 'no matching stack cell' });
+    }
+    const zip = await zipDir(result.outDir, result.rootName);
+    reply.header('Content-Type', 'application/zip');
+    reply.header('Content-Disposition', `attachment; filename="${result.rootName}.zip"`);
+    return reply.send(zip);
   });
 
   // Poll a scan: status, findings, and score once computed.

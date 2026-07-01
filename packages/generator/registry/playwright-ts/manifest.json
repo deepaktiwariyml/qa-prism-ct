@@ -1,0 +1,34 @@
+{
+  "id": "playwright-ts",
+  "supports": {
+    "platforms": ["web", "api", "web-api", "all"],
+    "language": "typescript",
+    "framework": "playwright",
+    "reporters": ["allure", "html", "junit"]
+  },
+  "variables": {
+    "projectName": { "type": "string", "default": "qa-automation" },
+    "webBaseUrl": { "type": "url", "default": "https://playwright.dev" },
+    "apiBaseUrl": { "type": "url", "default": "https://reqres.in/api" }
+  },
+  "dependencyRender": { "format": "npm-json", "token": "dependencies" },
+  "dependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.2",
+    "dotenv": "^16.4.5"
+  },
+  "reporterDependencies": {
+    "allure": { "allure-playwright": "^3.0.4", "allure-commandline": "^2.31.0" },
+    "html": {},
+    "junit": {}
+  },
+  "reporterTokens": {
+    "allure": { "reporterEntry": "\n    ['allure-playwright', { resultsDir: 'allure-results', detail: true }]," },
+    "junit": { "reporterEntry": "\n    ['junit', { outputFile: 'results.xml' }]," },
+    "html": { "reporterEntry": "" }
+  },
+  "files": "files",
+  "partials": ["ci/github-actions.yml.tmpl"],
+  "postGenerate": ["npm install --no-audit --no-fund", "npx tsc --noEmit"]
+}

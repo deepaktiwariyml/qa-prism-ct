@@ -1,0 +1,21 @@
+"""Creates and configures the Appium driver from environment/capabilities."""
+import os
+from appium import webdriver
+from appium.options.android import UiAutomator2Options
+from dotenv import load_dotenv
+
+load_dotenv()
+
+APPIUM_SERVER = os.getenv("APPIUM_SERVER", "{{appiumServer}}")
+APP_PACKAGE = os.getenv("APP_PACKAGE", "{{appPackage}}")
+
+
+def create_driver():
+    """Return a configured Android driver. Adjust capabilities for your app/device."""
+    options = UiAutomator2Options()
+    options.platform_name = "Android"
+    options.automation_name = "UiAutomator2"
+    options.app_package = APP_PACKAGE
+    options.app_activity = ".MainActivity"
+    options.new_command_timeout = 120
+    return webdriver.Remote(APPIUM_SERVER, options=options)

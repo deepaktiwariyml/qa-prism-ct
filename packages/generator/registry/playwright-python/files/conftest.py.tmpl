@@ -1,0 +1,26 @@
+"""Shared pytest fixtures: page objects and config, injected into tests."""
+import os
+import pytest
+from dotenv import load_dotenv
+from pages.home_page import HomePage
+
+load_dotenv()
+
+WEB_BASE_URL = os.getenv("WEB_BASE_URL", "{{webBaseUrl}}")
+API_BASE_URL = os.getenv("API_BASE_URL", "{{apiBaseUrl}}")
+
+
+@pytest.fixture
+def web_base_url() -> str:
+    return WEB_BASE_URL
+
+
+@pytest.fixture
+def api_base_url() -> str:
+    return API_BASE_URL
+
+
+@pytest.fixture
+def home_page(page) -> HomePage:
+    """`page` comes from pytest-playwright; we wrap it in our page object."""
+    return HomePage(page, WEB_BASE_URL)

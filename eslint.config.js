@@ -10,9 +10,11 @@ export default tseslint.config(
       '**/.turbo/**',
       '**/coverage/**',
       '**/next-env.d.ts',
-      // The original generator prototype lives here until it is ported into
-      // packages/generator in Phase 6; lint it in its own right at that point.
+      // The original generator prototype (now ported to packages/generator).
       'generator/**',
+      // Generator template assets — rendered output, not workspace source.
+      'packages/generator/registry/**',
+      'packages/generator/partials/**',
     ],
   },
   js.configs.recommended,

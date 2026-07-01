@@ -16,5 +16,9 @@ export default async function ScanPage({ params }: { params: { id: string } }) {
     );
   }
   if (!scan) notFound();
-  return <ScanDetailView initial={scan} />;
+  return (
+    <div className="mx-auto max-w-5xl px-6 py-10">
+      <ScanDetailView initial={scan} />
+    </div>
+  );
 }

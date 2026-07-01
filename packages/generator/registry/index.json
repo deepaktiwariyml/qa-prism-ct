@@ -1,0 +1,10 @@
+{
+  "cells": [
+    { "id": "playwright-ts", "framework": "playwright", "language": "typescript", "platforms": ["web", "api", "web-api", "all"], "reporters": ["allure", "html", "junit"], "path": "playwright-ts" },
+    { "id": "cypress-js", "framework": "cypress", "language": "javascript", "platforms": ["web", "web-api"], "reporters": ["mochawesome", "html"], "path": "cypress-js" },
+    { "id": "playwright-python", "framework": "playwright", "language": "python", "platforms": ["web", "api", "web-api", "all"], "reporters": ["allure", "html"], "path": "playwright-python" },
+    { "id": "appium-python", "framework": "appium", "language": "python", "platforms": ["mobile", "mobile-api"], "reporters": ["allure", "html"], "path": "appium-python" },
+    { "id": "selenium-java", "framework": "selenium", "language": "java", "platforms": ["web", "web-api", "all"], "reporters": ["allure", "extent"], "path": "selenium-java" },
+    { "id": "restassured-java", "framework": "restassured", "language": "java", "platforms": ["api"], "reporters": ["allure", "extent"], "path": "restassured-java" }
+  ]
+}

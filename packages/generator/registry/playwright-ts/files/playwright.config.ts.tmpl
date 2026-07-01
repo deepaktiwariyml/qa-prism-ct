@@ -1,0 +1,31 @@
+import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+export default defineConfig({
+  testDir: './tests',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 2 : undefined,
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  // Reporters resolved at generation time (selected: {{reporter}}).
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: 'playwright-report' }],{{reporterEntry}}
+  ],
+  use: {
+    baseURL: process.env.WEB_BASE_URL || '{{webBaseUrl}}',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    actionTimeout: 10_000,
+  },
+  projects: [
+    { name: 'web-chromium', testDir: './tests/web', use: { ...devices['Desktop Chrome'] } },
+    { name: 'web-firefox', testDir: './tests/web', use: { ...devices['Desktop Firefox'] } },
+    { name: 'api', testDir: './tests/api', use: { baseURL: process.env.API_BASE_URL || '{{apiBaseUrl}}' } },
+  ],
+});

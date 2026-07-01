@@ -75,7 +75,7 @@ tests pass.
 | 3 | First scanner (accessibility) end to end + api skeleton + queue | ✅ done |
 | 4 | Remaining scanners (performance, security, automation) | ✅ done |
 | 5 | Dashboard core | ✅ done |
-| 6 | Generator (port prototype) | ⏳ |
+| 6 | Generator (port prototype) + dashboard UX overhaul | ✅ done |
 | 7 | PR impact analyser + LLM layer | ⏳ |
 | 8 | Ticketing | ⏳ |
 | 9 | Correlation polish + trends | ⏳ |

@@ -1,72 +1,124 @@
 import Link from 'next/link';
-import { fetchRecentScans, type RecentScan } from '@/lib/api';
-import { RunScanForm } from '@/components/RunScanForm';
-import { scoreTextClass, statusBadge } from '@/lib/ui';
+import { MODULES } from '@/lib/modules';
 
-export const dynamic = 'force-dynamic';
+const PILLARS = [
+  { name: 'Accessibility', desc: 'axe-core WCAG crawl', dot: 'bg-fuchsia-500' },
+  { name: 'Performance', desc: 'Lighthouse Core Web Vitals', dot: 'bg-amber-500' },
+  { name: 'Security', desc: 'passive header & cookie checks', dot: 'bg-emerald-500' },
+  { name: 'Automation', desc: 'test-suite health', dot: 'bg-sky-500' },
+];
 
-export default async function Home() {
-  let scans: RecentScan[] = [];
-  let error: string | null = null;
-  try {
-    scans = await fetchRecentScans();
-  } catch (e) {
-    error = String(e);
-  }
+const FLOW = [
+  { step: '01', title: 'Point it at a target', body: 'A URL, a repo, or a GitHub PR. One canonical finding shape underpins everything.' },
+  { step: '02', title: 'Scanners run in parallel', body: 'Four pillars scan on a queue; each emits normalized findings with severity and remediation.' },
+  { step: '03', title: 'Score & correlate', body: 'Findings roll up into pillar and overall scores — and link across pillars where they share an area.' },
+  { step: '04', title: 'Act', body: 'Ship a framework, analyse a PR’s blast radius, and push findings to your tracker.' },
+];
 
+export default function Landing() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Quality intelligence</h1>
-        <p className="text-sm text-slate-500">
-          Scan a target across accessibility, performance, security, and automation.
-        </p>
-      </div>
-
-      <RunScanForm />
-
-      <div>
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">Recent scans</h2>
-        {error ? (
-          <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            Could not reach the API ({error}). Is it running on {process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}?
+    <div>
+      {/* Hero */}
+      <section className="relative overflow-hidden border-b border-slate-200">
+        <div className="bg-grid absolute inset-0" />
+        <div className="absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-indigo-50/80 to-transparent" />
+        <div className="relative mx-auto max-w-6xl px-6 py-24 text-center">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Four disciplines. One canonical finding.
+          </span>
+          <h1 className="mx-auto mt-6 max-w-3xl text-5xl font-semibold leading-tight tracking-tight text-slate-900">
+            Quality intelligence,{' '}
+            <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
+              unified
+            </span>
+            .
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">
+            QA Prism scans a target across accessibility, performance, security, and automation,
+            correlates what it finds across pillars, analyses the blast radius of a pull request,
+            and scaffolds a runnable test framework — in one place.
           </p>
-        ) : scans.length === 0 ? (
-          <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-            No scans yet — run one above.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {scans.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/scans/${s.id}`}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 hover:border-indigo-300"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{s.target.name || s.target.value}</div>
-                    <div className="truncate text-xs text-slate-500">{s.target.value}</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {s.score ? (
-                      <span className={`text-lg font-semibold ${scoreTextClass(s.score.overall)}`}>
-                        {s.score.overall}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-slate-400">—</span>
-                    )}
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(s.status)}`}
-                    >
-                      {s.status}
-                    </span>
-                  </div>
-                </Link>
-              </li>
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <Link
+              href="/dashboard"
+              className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+            >
+              Run your first scan
+            </Link>
+            <Link
+              href="/modules"
+              className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Explore the modules
+            </Link>
+          </div>
+          <div className="mx-auto mt-12 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
+            {PILLARS.map((p) => (
+              <div key={p.name} className="rounded-xl border border-slate-200 bg-white/70 p-4 text-left">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${p.dot}`} />
+                  <span className="text-sm font-medium">{p.name}</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">{p.desc}</p>
+              </div>
             ))}
-          </ul>
-        )}
-      </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="mx-auto max-w-6xl px-6 py-20">
+        <div className="max-w-2xl">
+          <p className="text-sm font-medium text-indigo-600">How it works</p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight">From target to action in four steps</h2>
+          <p className="mt-3 text-slate-600">
+            Every module emits the same <code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm">Finding</code>{' '}
+            shape — which is exactly what lets QA Prism correlate an accessibility failure with a
+            fragile test selector on the same feature.
+          </p>
+        </div>
+        <div className="mt-10 grid gap-4 md:grid-cols-4">
+          {FLOW.map((f) => (
+            <div key={f.step} className="rounded-2xl border border-slate-200 bg-white p-6">
+              <div className="text-sm font-semibold text-indigo-600">{f.step}</div>
+              <h3 className="mt-2 font-medium">{f.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">{f.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Modules */}
+      <section className="border-t border-slate-200 bg-slate-50">
+        <div className="mx-auto max-w-6xl px-6 py-20">
+          <div className="max-w-2xl">
+            <p className="text-sm font-medium text-indigo-600">Modules</p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight">Six tools, one platform</h2>
+            <p className="mt-3 text-slate-600">
+              Each module is a focused capability. Open any one to see what it does and how to use it.
+            </p>
+          </div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {MODULES.map((m) => (
+              <Link
+                key={m.slug}
+                href={`/modules/${m.slug}`}
+                className="group rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-indigo-300 hover:shadow-sm"
+              >
+                <div className={`inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${m.accent} text-white`}>
+                  <span className="text-sm font-semibold">{m.name.charAt(0)}</span>
+                </div>
+                <h3 className="mt-4 font-medium">{m.name}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{m.tagline}</p>
+                <span className="mt-4 inline-block text-sm font-medium text-indigo-600 group-hover:underline">
+                  Learn more →
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

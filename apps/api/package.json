@@ -23,6 +23,7 @@
     "@fastify/cors": "^10.0.1",
     "@qa-prism/core": "workspace:*",
     "@qa-prism/db": "workspace:*",
+    "@qa-prism/generator": "workspace:*",
     "@qa-prism/scanner-accessibility": "workspace:*",
     "@qa-prism/scanner-automation": "workspace:*",
     "@qa-prism/scanner-performance": "workspace:*",
