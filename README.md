@@ -73,7 +73,7 @@ tests pass.
 | 1 | Foundations: `core` + `db` | ✅ done |
 | 2 | Scoring engine | ✅ done |
 | 3 | First scanner (accessibility) end to end + api skeleton + queue | ✅ done |
-| 4 | Remaining scanners (performance, security, automation) | ⏳ |
+| 4 | Remaining scanners (performance, security, automation) | ✅ done |
 | 5 | Dashboard core | ⏳ |
 | 6 | Generator (port prototype) | ⏳ |
 | 7 | PR impact analyser + LLM layer | ⏳ |

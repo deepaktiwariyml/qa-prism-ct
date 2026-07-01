@@ -1,3 +1,3 @@
-// @qa-prism/scanner-security — passive header/cookie/TLS/CSP checks (Phase 4)
-// Phase 0 placeholder. Implemented in a later build phase (see spec §10).
-export const PACKAGE = '@qa-prism/scanner-security' as const;
+// @qa-prism/scanner-security — passive header/cookie/TLS checks (spec §6.3).
+export { securityScanner } from './scan.js';
+export { SECURITY_HEADERS, COOKIE_CHECKS, SECURITY_CONFIG } from './config.js';

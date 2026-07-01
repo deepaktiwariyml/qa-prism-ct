@@ -7,6 +7,8 @@ export const SCAN_QUEUE = 'scans';
 export interface ScanJobData {
   scanId: string;
   target: { kind: 'url' | 'repo'; value: string };
+  /** Extra per-scan inputs, e.g. { repoPath, reportPaths } for automation. */
+  options?: Record<string, unknown>;
 }
 
 /**

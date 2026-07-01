@@ -2,13 +2,18 @@ import type { Finding, Location, Scanner, ScanContext } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { scoreScan } from '@qa-prism/scoring';
 import { accessibilityScanner } from '@qa-prism/scanner-accessibility';
+import { performanceScanner } from '@qa-prism/scanner-performance';
+import { securityScanner } from '@qa-prism/scanner-security';
+import { automationScanner } from '@qa-prism/scanner-automation';
 import type { ScanJobData } from './queue.js';
 
-/**
- * The scanners run for each scan. Phase 3 ships accessibility only; Phase 4
- * appends performance/security/automation here with no other changes.
- */
-const SCANNERS: Scanner[] = [accessibilityScanner];
+/** All four pillar scanners. Each no-ops for target kinds it doesn't handle. */
+const SCANNERS: Scanner[] = [
+  accessibilityScanner,
+  performanceScanner,
+  securityScanner,
+  automationScanner,
+];
 
 type FindingRow = Awaited<ReturnType<ReturnType<typeof getPrisma>['finding']['findMany']>>[number];
 
@@ -47,7 +52,7 @@ export async function processScan(data: ScanJobData): Promise<void> {
   });
 
   try {
-    const ctx: ScanContext = { scanId: data.scanId, target: data.target };
+    const ctx: ScanContext = { scanId: data.scanId, target: data.target, options: data.options };
     const results = await Promise.all(SCANNERS.map((scan) => scan(ctx)));
     const findings = results.flat();
 

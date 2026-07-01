@@ -10,6 +10,7 @@ const CreateScanBody = z.object({
     kind: z.enum(['url', 'repo']),
     value: z.string().min(1),
   }),
+  options: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -28,7 +29,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
     }
-    const { target, name } = parsed.data;
+    const { target, name, options } = parsed.data;
 
     const existing = await prisma.target.findFirst({
       where: { kind: target.kind, value: target.value },
@@ -42,7 +43,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     const scan = await prisma.scan.create({
       data: { targetId: targetRow.id, status: 'queued' },
     });
-    await queue.add('scan', { scanId: scan.id, target });
+    await queue.add('scan', { scanId: scan.id, target, options });
 
     return reply.code(202).send({ scanId: scan.id, status: scan.status });
   });

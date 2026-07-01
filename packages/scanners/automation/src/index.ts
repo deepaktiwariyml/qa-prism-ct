@@ -1,3 +1,5 @@
-// @qa-prism/scanner-automation — test-suite health via AST + report parsing (Phase 4)
-// Phase 0 placeholder. Implemented in a later build phase (see spec §10).
-export const PACKAGE = '@qa-prism/scanner-automation' as const;
+// @qa-prism/scanner-automation — test-suite health via AST + report parsing (spec §6.4).
+export { automationScanner } from './scan.js';
+export { analyzeTestFile } from './analyze-tests.js';
+export { parseReportFile } from './parse-reports.js';
+export { AUTOMATION_CONFIG } from './config.js';

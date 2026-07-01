@@ -14,6 +14,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@qa-prism/core": "workspace:*",
+    "fast-xml-parser": "^4.5.0",
+    "typescript": "^5.6.3"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.5"
   }
 }
