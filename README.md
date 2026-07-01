@@ -71,7 +71,7 @@ tests pass.
 |---|---|---|
 | 0 | Repo skeleton (pnpm + Turborepo, tooling, docker-compose, empty packages) | ✅ done |
 | 1 | Foundations: `core` + `db` | ✅ done |
-| 2 | Scoring engine | ⏳ |
+| 2 | Scoring engine | ✅ done |
 | 3 | First scanner (accessibility) end to end + api skeleton + queue | ⏳ |
 | 4 | Remaining scanners (performance, security, automation) | ⏳ |
 | 5 | Dashboard core | ⏳ |

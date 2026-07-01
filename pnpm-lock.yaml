@@ -74,7 +74,15 @@ importers:
 
   packages/scanners/security: {}
 
-  packages/scoring: {}
+  packages/scoring:
+    dependencies:
+      '@qa-prism/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      vitest:
+        specifier: ^2.1.5
+        version: 2.1.9(@types/node@22.20.0)
 
   packages/ticketing: {}
 
