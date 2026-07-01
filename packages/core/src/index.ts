@@ -6,3 +6,4 @@ export * from './severity.js';
 export * from './finding.js';
 export * from './score.js';
 export * from './selection.js';
+export * from './scanner.js';

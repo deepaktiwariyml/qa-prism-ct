@@ -1,3 +1,3 @@
-// @qa-prism/scanner-accessibility — axe-core / Playwright WCAG crawl (Phase 3)
-// Phase 0 placeholder. Implemented in a later build phase (see spec §10).
-export const PACKAGE = '@qa-prism/scanner-accessibility' as const;
+// @qa-prism/scanner-accessibility — axe-core WCAG crawl (spec §6.1).
+export { accessibilityScanner } from './scan.js';
+export { ACCESSIBILITY_CONFIG } from './config.js';
