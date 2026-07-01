@@ -1,0 +1,146 @@
+// QA Prism database schema (spec §5). PostgreSQL 16 via Prisma.
+// cuid() ids; indexes on foreign keys and on (targetId, createdAt) for trends.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- enums -------------------------------------------------------------------
+
+enum TargetKind {
+  url
+  repo
+}
+
+/// Lifecycle of a background job (a scan run or an impact analysis).
+enum RunStatus {
+  queued
+  running
+  done
+  failed
+}
+
+enum Pillar {
+  automation
+  accessibility
+  security
+  performance
+}
+
+enum Severity {
+  critical
+  high
+  medium
+  low
+  info
+}
+
+enum TicketProvider {
+  jira
+  linear
+}
+
+// --- models ------------------------------------------------------------------
+
+/// A thing being tracked over time — a URL or a repo.
+model Target {
+  id        String     @id @default(cuid())
+  name      String
+  kind      TargetKind
+  value     String
+  createdAt DateTime   @default(now())
+
+  scans         Scan[]
+  impactReports ImpactReport[]
+
+  @@index([createdAt])
+}
+
+/// One scan run of a Target.
+model Scan {
+  id         String    @id @default(cuid())
+  targetId   String
+  status     RunStatus @default(queued)
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  target   Target     @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  findings Finding[]
+  score    ScanScore?
+
+  @@index([targetId, createdAt])
+}
+
+/// A single finding, mirroring the canonical Finding type (spec §4.1).
+/// `location` and `evidence` are JSONB; `tags` is a text[].
+model Finding {
+  id          String   @id @default(cuid())
+  scanId      String
+  pillar      Pillar
+  severity    Severity
+  code        String
+  title       String
+  description String
+  location    Json
+  remediation String
+  tags        String[]
+  evidence    Json?
+  createdAt   DateTime @default(now())
+
+  scan    Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+
+  @@index([scanId, pillar])
+  @@index([code])
+}
+
+/// Aggregated score for a scan (spec §4.2). One row per scan.
+/// `pillars` and `correlations` stored as JSONB.
+model ScanScore {
+  id           String   @id @default(cuid())
+  scanId       String   @unique
+  overall      Float
+  pillars      Json
+  correlations Json
+  computedAt   DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+}
+
+/// A PR impact analysis (spec §6.5). `areas` is the JSONB ImpactArea[].
+model ImpactReport {
+  id        String    @id @default(cuid())
+  targetId  String
+  prUrl     String
+  prNumber  Int
+  status    RunStatus @default(queued)
+  areas     Json      @default("[]")
+  createdAt DateTime  @default(now())
+
+  target Target @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([targetId, createdAt])
+}
+
+/// A finding pushed to an external tracker (spec §6.8, §9). At most one ticket
+/// per (finding, provider) — this uniqueness makes batch creation idempotent.
+model Ticket {
+  id          String         @id @default(cuid())
+  findingId   String
+  provider    TicketProvider
+  externalId  String
+  externalUrl String
+  status      String
+  createdAt   DateTime       @default(now())
+
+  finding Finding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+
+  @@unique([findingId, provider])
+  @@index([findingId])
+}
