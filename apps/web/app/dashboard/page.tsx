@@ -1,7 +1,6 @@
-import Link from 'next/link';
 import { fetchRecentScans, type RecentScan } from '@/lib/api';
 import { RunScanForm } from '@/components/RunScanForm';
-import { scoreTextClass, statusBadge } from '@/lib/ui';
+import { RecentScans } from '@/components/RecentScans';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,40 +31,8 @@ export default async function Dashboard() {
             Could not reach the API ({error}). Is it running on{' '}
             {process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}?
           </p>
-        ) : scans.length === 0 ? (
-          <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-            No scans yet — run one above.
-          </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {scans.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/scans/${s.id}`}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-300 hover:shadow-sm"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{s.target.name || s.target.value}</div>
-                    <div className="truncate text-xs text-slate-500">{s.target.value}</div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {s.score ? (
-                      <span className={`text-lg font-semibold ${scoreTextClass(s.score.overall)}`}>
-                        {s.score.overall}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-slate-400">—</span>
-                    )}
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(s.status)}`}
-                    >
-                      {s.status}
-                    </span>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <RecentScans scans={scans} />
         )}
       </div>
     </div>

@@ -179,5 +179,16 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     return scan;
   });
 
+  // Delete a scan (its findings + score cascade via the schema).
+  app.delete('/scans/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      await prisma.scan.delete({ where: { id } });
+    } catch {
+      return reply.code(404).send({ error: 'scan not found' });
+    }
+    return reply.code(204).send();
+  });
+
   return app;
 }
