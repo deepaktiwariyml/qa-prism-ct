@@ -1,0 +1,72 @@
+import Link from 'next/link';
+import { fetchRecentScans, type RecentScan } from '@/lib/api';
+import { RunScanForm } from '@/components/RunScanForm';
+import { scoreTextClass, statusBadge } from '@/lib/ui';
+
+export const dynamic = 'force-dynamic';
+
+export default async function Home() {
+  let scans: RecentScan[] = [];
+  let error: string | null = null;
+  try {
+    scans = await fetchRecentScans();
+  } catch (e) {
+    error = String(e);
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Quality intelligence</h1>
+        <p className="text-sm text-slate-500">
+          Scan a target across accessibility, performance, security, and automation.
+        </p>
+      </div>
+
+      <RunScanForm />
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-700">Recent scans</h2>
+        {error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            Could not reach the API ({error}). Is it running on {process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}?
+          </p>
+        ) : scans.length === 0 ? (
+          <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+            No scans yet — run one above.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {scans.map((s) => (
+              <li key={s.id}>
+                <Link
+                  href={`/scans/${s.id}`}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 hover:border-indigo-300"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{s.target.name || s.target.value}</div>
+                    <div className="truncate text-xs text-slate-500">{s.target.value}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {s.score ? (
+                      <span className={`text-lg font-semibold ${scoreTextClass(s.score.overall)}`}>
+                        {s.score.overall}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-slate-400">—</span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(s.status)}`}
+                    >
+                      {s.status}
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}

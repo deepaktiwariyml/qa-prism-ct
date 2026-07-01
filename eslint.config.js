@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/.next/**',
       '**/.turbo/**',
       '**/coverage/**',
+      '**/next-env.d.ts',
       // The original generator prototype lives here until it is ported into
       // packages/generator in Phase 6; lint it in its own right at that point.
       'generator/**',

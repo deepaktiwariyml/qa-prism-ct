@@ -20,6 +20,7 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@fastify/cors": "^10.0.1",
     "@qa-prism/core": "workspace:*",
     "@qa-prism/db": "workspace:*",
     "@qa-prism/scanner-accessibility": "workspace:*",

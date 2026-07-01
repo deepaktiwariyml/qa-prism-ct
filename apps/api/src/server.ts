@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 import { z } from 'zod';
 import { getPrisma } from '@qa-prism/db';
 import type { Queue } from 'bullmq';
@@ -21,7 +22,19 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   const app = Fastify({ logger: true });
   const prisma = getPrisma();
 
+  // Allow the dashboard (and other local clients) to call the API from a browser.
+  void app.register(cors, { origin: true });
+
   app.get('/health', async () => ({ ok: true }));
+
+  // Recent scans for the dashboard home (target + overall score).
+  app.get('/scans', async () => {
+    return prisma.scan.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+      include: { target: true, score: { select: { overall: true } } },
+    });
+  });
 
   // Trigger a scan: find-or-create the Target, create a queued Scan, enqueue it.
   app.post('/scans', async (req, reply) => {
