@@ -1,0 +1,25 @@
+package com.qaprism.api;
+
+import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.specification.RequestSpecification;
+import org.testng.annotations.BeforeClass;
+
+/**
+ * BaseApiTest centralises the RequestSpecification (base URI, headers, logging)
+ * so individual tests stay focused on calls + assertions.
+ */
+public class BaseApiTest {
+    protected RequestSpecification spec;
+    protected final String baseUri =
+        System.getenv().getOrDefault("API_BASE_URL", "{{apiBaseUrl}}");
+
+    @BeforeClass
+    public void setUp() {
+        RestAssured.baseURI = baseUri;
+        spec = new RequestSpecBuilder()
+            .setBaseUri(baseUri)
+            .setContentType("application/json")
+            .build();
+    }
+}

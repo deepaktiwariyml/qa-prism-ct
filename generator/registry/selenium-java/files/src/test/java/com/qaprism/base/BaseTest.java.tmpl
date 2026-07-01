@@ -1,0 +1,36 @@
+package com.qaprism.base;
+
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+
+import java.time.Duration;
+
+/**
+ * BaseTest manages the WebDriver lifecycle. Selenium 4 auto-manages the
+ * browser driver binary (Selenium Manager) — no WebDriverManager needed.
+ */
+public class BaseTest {
+    protected WebDriver driver;
+    protected final String baseUrl =
+        System.getenv().getOrDefault("WEB_BASE_URL", "{{webBaseUrl}}");
+
+    @BeforeMethod
+    public void setUp() {
+        ChromeOptions options = new ChromeOptions();
+        if (System.getenv("CI") != null) {
+            options.addArguments("--headless=new", "--no-sandbox", "--disable-dev-shm-usage");
+        }
+        driver = new ChromeDriver(options);
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
+    }
+
+    @AfterMethod
+    public void tearDown() {
+        if (driver != null) {
+            driver.quit();
+        }
+    }
+}

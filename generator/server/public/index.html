@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QA Prism — Framework Generator</title>
+<style>
+  :root {
+    --bg: #f4f3ee; --surface: #fffefb; --surface-2: #faf9f5;
+    --border: #e3e0d8; --border-strong: #cfcbc0; --accent: #2a78d6;
+    --text: #2a2926; --muted: #898781; --on-accent: #fff;
+    --radius: 8px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); padding: 2rem 1rem; }
+  .card { max-width: 560px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.75rem; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; }
+  .head h1 { font-size: 19px; font-weight: 600; }
+  .head .badge { font-size: 11px; background: #e7f0fb; color: var(--accent); padding: 2px 8px; border-radius: 6px; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .field { margin-bottom: 1.1rem; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  select, input { width: 100%; font-family: var(--font); font-size: 14px; padding: 11px 13px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text); outline: none; }
+  select:focus, input:focus { border-color: var(--accent); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .feats { display: flex; flex-wrap: wrap; gap: 7px; margin: 0.4rem 0 1.2rem; }
+  .chip { font-size: 12px; padding: 5px 11px; border-radius: 6px; background: #e9f5ee; color: #1b7a52; border: 1px solid #c9e7d6; }
+  button { width: 100%; padding: 13px; border: none; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font); }
+  button:hover { opacity: .92; }
+  button:disabled { opacity: .55; cursor: default; }
+  .status { font-size: 13px; text-align: center; margin-top: 12px; min-height: 18px; }
+  .status.err { color: #c0392b; }
+  .status.ok { color: #1b7a52; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div>
+        <h1>Framework generator <span class="badge">QA Prism</span></h1>
+        <div class="sub">Configure your stack — download a runnable framework</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="platform">Platform</label>
+      <select id="platform"></select>
+    </div>
+    <div class="field">
+      <label for="language">Language</label>
+      <select id="language"></select>
+    </div>
+    <div class="field">
+      <label for="framework">Framework / runner</label>
+      <select id="framework"></select>
+      <div class="hint" id="fwHint"></div>
+    </div>
+    <div class="field">
+      <label for="reporter">Reporting</label>
+      <select id="reporter"></select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="projectName">Project name</label>
+        <input id="projectName" value="qa-automation" />
+      </div>
+      <div class="field">
+        <label for="webBaseUrl">Base URL (optional)</label>
+        <input id="webBaseUrl" placeholder="https://your-app.com" />
+      </div>
+    </div>
+
+    <label>Always included</label>
+    <div class="feats">
+      <span class="chip">Page Object Model</span>
+      <span class="chip">README</span>
+      <span class="chip">CI pipeline</span>
+      <span class="chip">Example tests</span>
+    </div>
+
+    <button id="gen">Generate &amp; download</button>
+    <div class="status" id="status"></div>
+  </div>
+
+<script>
+let CELLS = [];
+
+async function loadCells() {
+  const res = await fetch('/api/cells');
+  CELLS = (await res.json()).cells;
+  initDropdowns();
+}
+
+function uniq(arr) { return [...new Set(arr)]; }
+function setOptions(id, values, labels) {
+  const el = document.getElementById(id);
+  el.innerHTML = values.map((v, i) => `<option value="${v}">${labels ? labels[i] : v}</option>`).join('');
+}
+
+const state = { platform: '', language: '', framework: '', reporter: '' };
+
+function platformsAvailable() {
+  return uniq(CELLS.flatMap(c => c.platforms)).sort();
+}
+function languagesFor(platform) {
+  return uniq(CELLS.filter(c => c.platforms.includes(platform)).map(c => c.language)).sort();
+}
+function frameworksFor(platform, language) {
+  return CELLS.filter(c => c.platforms.includes(platform) && c.language === language);
+}
+function reportersFor(cell) { return cell ? cell.reporters : []; }
+
+function currentCell() {
+  return CELLS.find(c => c.platforms.includes(state.platform) && c.language === state.language && c.framework === state.framework);
+}
+
+function refresh() {
+  const langs = languagesFor(state.platform);
+  if (!langs.includes(state.language)) state.language = langs[0];
+  setOptions('language', langs);
+  document.getElementById('language').value = state.language;
+
+  const fws = frameworksFor(state.platform, state.language);
+  if (!fws.find(c => c.framework === state.framework)) state.framework = fws[0]?.framework;
+  setOptions('framework', fws.map(c => c.framework));
+  document.getElementById('framework').value = state.framework;
+  document.getElementById('fwHint').textContent =
+    fws.length ? `${fws.length} framework(s) available for this platform + language` : 'No framework for this combination';
+
+  const cell = currentCell();
+  const reps = reportersFor(cell);
+  if (!reps.includes(state.reporter)) state.reporter = reps[0];
+  setOptions('reporter', reps);
+  document.getElementById('reporter').value = state.reporter;
+}
+
+function initDropdowns() {
+  const plats = platformsAvailable();
+  state.platform = plats.includes('web-api') ? 'web-api' : plats[0];
+  setOptions('platform', plats);
+  document.getElementById('platform').value = state.platform;
+  refresh();
+
+  document.getElementById('platform').onchange = e => { state.platform = e.target.value; refresh(); };
+  document.getElementById('language').onchange = e => { state.language = e.target.value; refresh(); };
+  document.getElementById('framework').onchange = e => { state.framework = e.target.value; refresh(); };
+  document.getElementById('reporter').onchange = e => { state.reporter = e.target.value; };
+}
+
+document.getElementById('gen').onclick = async () => {
+  const btn = document.getElementById('gen');
+  const status = document.getElementById('status');
+  status.className = 'status';
+  status.textContent = 'Generating…';
+  btn.disabled = true;
+  try {
+    const payload = {
+      ...state,
+      projectName: document.getElementById('projectName').value || 'qa-automation',
+      webBaseUrl: document.getElementById('webBaseUrl').value || undefined,
+    };
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Generation failed' }));
+      throw new Error(err.error || 'Generation failed');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${payload.projectName}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    status.className = 'status ok';
+    status.textContent = `Downloaded ${payload.projectName}.zip`;
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+loadCells();
+</script>
+</body>
+</html>

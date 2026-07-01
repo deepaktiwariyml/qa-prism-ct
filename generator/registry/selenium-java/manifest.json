@@ -1,0 +1,33 @@
+{
+  "id": "selenium-java",
+  "supports": {
+    "platforms": ["web", "web-api", "all"],
+    "language": "java",
+    "framework": "selenium",
+    "reporters": ["allure", "extent"]
+  },
+  "variables": {
+    "projectName": { "type": "string", "default": "qa-automation" },
+    "webBaseUrl": { "type": "url", "default": "https://the-internet.herokuapp.com" }
+  },
+  "dependencyRender": { "format": "maven-xml", "token": "dependencies" },
+  "dependencies": {
+    "org.seleniumhq.selenium:selenium-java": "4.25.0",
+    "org.testng:testng": "7.10.2"
+  },
+  "reporterDependencies": {
+    "allure": { "io.qameta.allure:allure-testng": "2.29.0" },
+    "extent": {
+      "com.aventstack:extentreports": "5.1.2",
+      "tech.grasshopper:extentreports-testng-adapter": "1.2.4"
+    }
+  },
+  "reporterTokens": {
+    "allure": { "testngListener": "<listener class-name=\"io.qameta.allure.testng.AllureTestNg\"/>" },
+    "extent": { "testngListener": "<listener class-name=\"com.aventstack.extentreports.testng.listener.ExtentITestListener\"/>" }
+  },
+  "files": "files",
+  "partials": ["ci/github-actions-java.yml.tmpl"],
+  "postGenerate": ["python3 -c \"import xml.dom.minidom,sys; xml.dom.minidom.parse('pom.xml'); print('pom.xml is well-formed')\""],
+  "notes": "Build/run on your machine with Maven: `mvn test` (JDK 11+ and Maven required). Selenium 4 auto-manages browser drivers."
+}

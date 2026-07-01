@@ -1,0 +1,21 @@
+{
+  "name": "qa-prism-generator",
+  "version": "0.1.0",
+  "description": "QA Prism framework generator \u2014 turns stack selections into runnable automation frameworks.",
+  "type": "module",
+  "scripts": {
+    "generate": "tsx engine/generate.ts",
+    "list": "tsx engine/generate.ts --list",
+    "serve": "tsx server/server.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "@types/archiver": "^6.0.2"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1"
+  }
+}

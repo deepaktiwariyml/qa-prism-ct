@@ -1,0 +1,32 @@
+{
+  "id": "playwright-python",
+  "supports": {
+    "platforms": ["web", "api", "web-api", "all"],
+    "language": "python",
+    "framework": "playwright",
+    "reporters": ["allure", "html"]
+  },
+  "variables": {
+    "projectName": { "type": "string", "default": "qa-automation" },
+    "webBaseUrl": { "type": "url", "default": "https://playwright.dev" },
+    "apiBaseUrl": { "type": "url", "default": "https://reqres.in/api" }
+  },
+  "dependencyRender": { "format": "pip-lines", "token": "dependencies" },
+  "dependencies": {
+    "pytest": ">=8.0,<9",
+    "playwright": ">=1.48,<2",
+    "pytest-playwright": ">=0.5",
+    "python-dotenv": ">=1.0"
+  },
+  "reporterDependencies": {
+    "allure": { "allure-pytest": ">=2.13" },
+    "html": { "pytest-html": ">=4.1" }
+  },
+  "reporterTokens": {
+    "allure": { "reporterAddopts": "--alluredir=allure-results" },
+    "html": { "reporterAddopts": "--html=report.html --self-contained-html" }
+  },
+  "files": "files",
+  "partials": ["ci/github-actions-python.yml.tmpl"],
+  "postGenerate": ["pip install -r requirements.txt --break-system-packages -q", "python -m py_compile pages/base_page.py pages/home_page.py utils/test_data.py tests/test_home.py tests/test_api.py"]
+}

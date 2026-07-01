@@ -1,0 +1,33 @@
+{
+  "id": "appium-python",
+  "supports": {
+    "platforms": ["mobile", "mobile-api"],
+    "language": "python",
+    "framework": "appium",
+    "reporters": ["allure", "html"]
+  },
+  "variables": {
+    "projectName": { "type": "string", "default": "qa-mobile-automation" },
+    "appPackage": { "type": "string", "default": "com.example.app" },
+    "appiumServer": { "type": "url", "default": "http://127.0.0.1:4723" }
+  },
+  "dependencyRender": { "format": "pip-lines", "token": "dependencies" },
+  "dependencies": {
+    "pytest": ">=8.0,<9",
+    "Appium-Python-Client": ">=4.0",
+    "selenium": ">=4.20",
+    "python-dotenv": ">=1.0"
+  },
+  "reporterDependencies": {
+    "allure": { "allure-pytest": ">=2.13" },
+    "html": { "pytest-html": ">=4.1" }
+  },
+  "reporterTokens": {
+    "allure": { "reporterAddopts": "--alluredir=allure-results" },
+    "html": { "reporterAddopts": "--html=report.html --self-contained-html" }
+  },
+  "files": "files",
+  "partials": ["ci/github-actions-python.yml.tmpl"],
+  "postGenerate": ["pip install -r requirements.txt --break-system-packages -q", "python -m py_compile pages/base_screen.py pages/login_screen.py utils/driver_factory.py tests/test_login.py"],
+  "notes": "Mobile tests need a running Appium server and a device/emulator. The CI workflow runs only static checks; wire in a device farm (e.g. BrowserStack/Sauce Labs) for full runs."
+}
