@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PILLARS, SEVERITY_RANK, type Finding, type Pillar } from '@qa-prism/core';
-import { API_BASE, type ScanDetail } from '@/lib/api';
+import type { ScanDetail } from '@/lib/api';
 import { SEVERITY_BADGE, scoreTextClass, statusBadge } from '@/lib/ui';
 import { PillarRadar } from './PillarRadar';
 import { SeverityBar } from './SeverityBar';
@@ -23,7 +23,7 @@ export function ScanDetailView({ initial }: { initial: ScanDetail }) {
     if (settled) return;
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/scans/${scan.id}`, { cache: 'no-store' });
+        const res = await fetch(`/api/scans/${scan.id}`, { cache: 'no-store' });
         if (res.ok) {
           const next = (await res.json()) as ScanDetail;
           setScan(next);

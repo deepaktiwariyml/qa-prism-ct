@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import type { Severity } from '@qa-prism/core';
-import { API_BASE } from '@/lib/api';
 import { SEVERITY_BADGE } from '@/lib/ui';
 
 interface ImpactArea {
@@ -38,7 +37,7 @@ export function ImpactAnalyser() {
     try {
       const body: Record<string, unknown> = { prUrl };
       if (token.trim()) body.githubToken = token.trim();
-      const res = await fetch(`${API_BASE}/impact`, {
+      const res = await fetch('/api/impact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

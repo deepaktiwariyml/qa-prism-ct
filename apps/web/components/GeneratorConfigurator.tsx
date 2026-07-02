@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { API_BASE } from '@/lib/api';
 
 interface Cell {
   id: string;
@@ -24,7 +23,7 @@ export function GeneratorConfigurator() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/generator/cells`)
+    fetch('/api/generator/cells')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`API ${r.status}`))))
       .then((data: Cell[]) => {
         setCells(data);
@@ -59,7 +58,7 @@ export function GeneratorConfigurator() {
         projectName: projectName.trim() || undefined,
         webBaseUrl: webBaseUrl.trim() || undefined,
       };
-      const res = await fetch(`${API_BASE}/generator/generate`, {
+      const res = await fetch('/api/generator/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(selection),
@@ -87,7 +86,7 @@ export function GeneratorConfigurator() {
   if (loadError) {
     return (
       <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        Could not load stack cells ({loadError}). Is the API running on {API_BASE}?
+        Could not load stack cells ({loadError}). Is the API running?
       </p>
     );
   }

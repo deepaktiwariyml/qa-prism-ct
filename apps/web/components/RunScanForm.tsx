@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { API_BASE } from '@/lib/api';
 
 export function RunScanForm() {
   const router = useRouter();
@@ -21,7 +20,7 @@ export function RunScanForm() {
         target: { kind: 'url', value: url },
       };
       if (repoPath.trim()) body.options = { repoPath: repoPath.trim() };
-      const res = await fetch(`${API_BASE}/scans`, {
+      const res = await fetch('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

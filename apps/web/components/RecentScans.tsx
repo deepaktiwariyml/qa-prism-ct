@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { API_BASE, type RecentScan } from '@/lib/api';
+import type { RecentScan } from '@/lib/api';
 import { scoreTextClass, statusBadge } from '@/lib/ui';
 
 export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
@@ -19,7 +19,7 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
     setError(null);
     setRemoving((s) => new Set(s).add(id));
     try {
-      const res = await fetch(`${API_BASE}/scans/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/scans/${id}`, { method: 'DELETE' });
       if (res.ok || res.status === 404) {
         setScans((list) => list.filter((s) => s.id !== id));
       } else {
