@@ -10,7 +10,12 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
   const [removing, setRemoving] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  async function remove(id: string) {
+  async function remove(scan: RecentScan) {
+    const label = scan.target.name || scan.target.value;
+    if (!window.confirm(`Remove the scan for "${label}"? This also deletes its findings and score.`)) {
+      return;
+    }
+    const id = scan.id;
     setError(null);
     setRemoving((s) => new Set(s).add(id));
     try {
@@ -73,7 +78,7 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
             </Link>
             <button
               type="button"
-              onClick={() => remove(s.id)}
+              onClick={() => remove(s)}
               disabled={removing.has(s.id)}
               aria-label="Remove scan"
               title="Remove scan"
