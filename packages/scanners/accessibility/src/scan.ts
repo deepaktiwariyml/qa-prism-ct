@@ -4,6 +4,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import {
   makeFindingCode,
   normalizeSeverity,
+  SEVERITY_RANK,
   type Finding,
   type ScanContext,
   type Scanner,
@@ -192,15 +193,37 @@ export const accessibilityScanner: Scanner = async (ctx: ScanContext): Promise<F
   }
 };
 
-/** Drop duplicate findings sharing the same code + selector + page. */
+/**
+ * Collapse to one finding per WCAG rule (code). The same rule fires on every
+ * crawled page, so keying by code+selector+page would count a single site-wide
+ * issue many times and crush the score. We keep one representative per rule
+ * (highest severity), record how many places it occurred, and note the count in
+ * the title so the aggregation is visible.
+ */
 function dedupe(findings: Finding[]): Finding[] {
-  const seen = new Set<string>();
-  const out: Finding[] = [];
+  const byCode = new Map<string, Finding>();
+  const instances = new Map<string, number>();
+  const places = new Map<string, Array<{ path: string; selector?: string }>>();
+
   for (const f of findings) {
-    const key = `${f.code}|${f.location.selector ?? ''}|${f.location.path}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(f);
+    instances.set(f.code, (instances.get(f.code) ?? 0) + 1);
+    const list = places.get(f.code) ?? [];
+    if (list.length < ACCESSIBILITY_CONFIG.maxNodesPerViolation) {
+      list.push({ path: f.location.path, selector: f.location.selector });
+    }
+    places.set(f.code, list);
+    const existing = byCode.get(f.code);
+    if (!existing || SEVERITY_RANK[f.severity] > SEVERITY_RANK[existing.severity]) {
+      byCode.set(f.code, f);
+    }
   }
-  return out;
+
+  return [...byCode.values()].map((f) => {
+    const count = instances.get(f.code) ?? 1;
+    return {
+      ...f,
+      title: count > 1 ? `${f.title} (${count} places)` : f.title,
+      evidence: { ...(f.evidence ?? {}), instances: count, places: places.get(f.code) },
+    };
+  });
 }
