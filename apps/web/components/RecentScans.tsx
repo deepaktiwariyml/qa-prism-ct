@@ -10,6 +10,7 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
   const [scans, setScans] = useState<RecentScan[]>(initial);
   const [removing, setRemoving] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   async function remove(scan: RecentScan) {
     const label = scan.target.name || scan.target.value;
@@ -45,11 +46,35 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
     );
   }
 
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? scans.filter((s) =>
+        `${s.target.name} ${s.target.value} ${s.status}`.toLowerCase().includes(q),
+      )
+    : scans;
+
   return (
     <div>
+      <div className="relative mb-3">
+        <svg viewBox="0 0 24 24" fill="none" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.6" />
+          <path d="m20 20-3-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search scans by URL, name, or status…"
+          className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500"
+        />
+      </div>
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+      {filtered.length === 0 ? (
+        <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+          No scans match “{query}”.
+        </p>
+      ) : (
       <ul className="flex flex-col gap-2">
-        {scans.map((s) => (
+        {filtered.map((s) => (
           <li
             key={s.id}
             className="flex items-center rounded-xl border border-slate-200 bg-white transition hover:border-indigo-300 hover:shadow-sm"
@@ -101,6 +126,7 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
           </li>
         ))}
       </ul>
+      )}
     </div>
   );
 }

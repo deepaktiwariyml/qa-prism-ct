@@ -84,12 +84,21 @@ export function ScanDetailView({ initial }: { initial: ScanDetail }) {
             ) : (
               <div className="text-sm text-slate-400">scoring…</div>
             )}
-            <Link
-              href="/dashboard"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              New scan
-            </Link>
+            <div className="flex flex-col gap-2">
+              <a
+                href={`/api/scans/${scan.id}/report`}
+                download
+                className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-center text-sm font-medium text-white transition hover:opacity-90"
+              >
+                Download report
+              </a>
+              <Link
+                href="/dashboard"
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-center text-sm hover:bg-slate-50"
+              >
+                New scan
+              </Link>
+            </div>
           </div>
         </div>
         {!settled && (

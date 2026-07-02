@@ -5,6 +5,7 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
+import { buildHtmlReport, type ReportScan } from './report.js';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
 import {
@@ -264,6 +265,24 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     const { id } = req.params as { id: string };
     await closeBrowserSession(id);
     return reply.code(204).send();
+  });
+
+  // Single-page, self-contained HTML report for a scan (download).
+  app.get('/scans/:id/report', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const scan = await prisma.scan.findUnique({
+      where: { id },
+      include: { findings: true, score: true, target: true },
+    });
+    if (!scan) return reply.code(404).send({ error: 'scan not found' });
+    const html = buildHtmlReport(scan as unknown as ReportScan);
+    const safeName = (scan.target.name || scan.target.value)
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60);
+    reply.header('Content-Type', 'text/html; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="qa-prism-${safeName || 'scan'}.html"`);
+    return reply.send(html);
   });
 
   // Delete a scan (its findings + score cascade via the schema).
