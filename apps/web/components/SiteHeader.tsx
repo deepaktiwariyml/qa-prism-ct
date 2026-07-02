@@ -11,7 +11,7 @@ const NAV = [
   { href: '/modules', label: 'Modules' },
 ];
 
-export function SiteHeader() {
+export function SiteHeader({ authed = false }: { authed?: boolean }) {
   const pathname = usePathname();
 
   async function logout() {
@@ -45,18 +45,29 @@ export function SiteHeader() {
           })}
         </nav>
         <div className="flex items-center gap-1">
-          <button
-            onClick={logout}
-            className="rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
-          >
-            Log out
-          </button>
-          <Link
-            href="/dashboard"
-            className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
-          >
-            Run a scan
-          </Link>
+          {authed ? (
+            <button
+              onClick={logout}
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+            >
+              Log out
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+            >
+              Log in
+            </Link>
+          )}
+          {authed && (
+            <Link
+              href="/dashboard"
+              className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+            >
+              Run a scan
+            </Link>
+          )}
         </div>
       </div>
     </header>
