@@ -1,4 +1,27 @@
-import type { Severity } from '@qa-prism/core';
+import type { Pillar, Severity } from '@qa-prism/core';
+
+/** Vibrant accent per pillar (used for dots, chips, rings). */
+export const PILLAR_COLOR: Record<Pillar, string> = {
+  automation: '#0ea5e9',
+  accessibility: '#d946ef',
+  security: '#10b981',
+  performance: '#f59e0b',
+};
+
+export const PILLAR_LABEL: Record<Pillar, string> = {
+  automation: 'Automation',
+  accessibility: 'Accessibility',
+  security: 'Security',
+  performance: 'Performance',
+};
+
+/** Solid hex for a score, by band (used by the gauge/rings). */
+export function scoreColor(score: number): string {
+  if (score >= 90) return '#10b981';
+  if (score >= 70) return '#f59e0b';
+  if (score >= 40) return '#f97316';
+  return '#ef4444';
+}
 
 /** Chart fill per severity. */
 export const SEVERITY_COLOR: Record<Severity, string> = {

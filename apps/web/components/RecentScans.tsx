@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { RecentScan } from '@/lib/api';
 import { scoreTextClass, statusBadge } from '@/lib/ui';
+import { fmtDateTime, relativeTime } from '@/lib/format';
 
 export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
   const [scans, setScans] = useState<RecentScan[]>(initial);
@@ -60,6 +61,9 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
               <div className="min-w-0">
                 <div className="truncate font-medium">{s.target.name || s.target.value}</div>
                 <div className="truncate text-xs text-slate-500">{s.target.value}</div>
+                <div className="mt-0.5 text-xs text-slate-400" suppressHydrationWarning title={fmtDateTime(s.createdAt)}>
+                  {relativeTime(s.createdAt)} · {fmtDateTime(s.createdAt)}
+                </div>
               </div>
               <div className="flex items-center gap-4">
                 {s.score ? (
