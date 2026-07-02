@@ -1,13 +1,18 @@
 'use client';
 
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Logo } from '@/components/Logo';
 
+/** Only allow same-site absolute paths as a redirect target (no open redirect). */
+function safeFrom(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
+  return value;
+}
+
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
-  const from = params.get('from') || '/';
+  const from = safeFrom(params.get('from'));
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,8 +31,9 @@ function LoginForm() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? `Login failed (${res.status})`);
       }
-      router.replace(from);
-      router.refresh();
+      // Full-page navigation so middleware re-runs with the fresh cookie and no
+      // stale App Router client cache for the (previously gated) destination.
+      window.location.assign(from);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
       setBusy(false);
