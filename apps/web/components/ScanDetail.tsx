@@ -5,12 +5,18 @@ import Link from 'next/link';
 import { PILLARS, SEVERITIES, SEVERITY_RANK, type Finding, type Pillar, type Severity } from '@qa-prism/core';
 import type { ScanDetail } from '@/lib/api';
 import { PILLAR_COLOR, PILLAR_LABEL, SEVERITY_BADGE, statusBadge } from '@/lib/ui';
-import { duration, fmtDateTime, relativeTime } from '@/lib/format';
+import { duration, fmtDateTime, humanizeMinutes, relativeTime } from '@/lib/format';
 import { ScoreGauge, MiniRing } from './ScoreGauge';
 import { PillarRadar } from './PillarRadar';
 import { SeverityBar } from './SeverityBar';
 
-export function ScanDetailView({ initial }: { initial: ScanDetail }) {
+export function ScanDetailView({
+  initial,
+  retentionMinutes = 60,
+}: {
+  initial: ScanDetail;
+  retentionMinutes?: number;
+}) {
   const [scan, setScan] = useState<ScanDetail>(initial);
   const [query, setQuery] = useState('');
   const [pillarFilter, setPillarFilter] = useState<Pillar | 'all'>('all');
@@ -107,8 +113,8 @@ export function ScanDetailView({ initial }: { initial: ScanDetail }) {
             <path d="M12 8v4l2.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
           <span>
-            This scan is kept for <strong>1 hour</strong>, then automatically deleted. Download the
-            report to keep a copy.
+            This scan is kept for <strong>{humanizeMinutes(retentionMinutes)}</strong>, then
+            automatically deleted. Download the report to keep a copy.
           </span>
         </div>
         {!settled && (

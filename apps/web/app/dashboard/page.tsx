@@ -5,6 +5,7 @@ import { RecentScans } from '@/components/RecentScans';
 export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
+  const retentionMinutes = Number(process.env.SCAN_RETENTION_MINUTES) || 60;
   let scans: RecentScan[] = [];
   let error: string | null = null;
   try {
@@ -32,7 +33,7 @@ export default async function Dashboard() {
             {process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}?
           </p>
         ) : (
-          <RecentScans scans={scans} />
+          <RecentScans scans={scans} retentionMinutes={retentionMinutes} />
         )}
       </div>
     </div>

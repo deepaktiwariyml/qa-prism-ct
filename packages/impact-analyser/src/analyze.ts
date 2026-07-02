@@ -9,8 +9,12 @@ import {
 import { fetchPr, type ChangedFile, type FetchImpl } from './github.js';
 import { parseGitHubPrUrl } from './parse-url.js';
 
-/** Max total patch characters sent to the LLM (bounded context — spec §7). */
-const MAX_PATCH_CHARS = 14_000;
+/**
+ * Max total patch characters sent to the LLM (bounded context — spec §7).
+ * claude-sonnet-4-6 has a very large context window, so this is generous;
+ * only genuinely huge PRs get truncated. Overridable via IMPACT_MAX_PATCH_CHARS.
+ */
+const MAX_PATCH_CHARS = Number(process.env.IMPACT_MAX_PATCH_CHARS) || 200_000;
 
 const AnalysisSchema = z.object({
   areas: z.array(

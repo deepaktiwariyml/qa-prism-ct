@@ -4,19 +4,18 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { RecentScan } from '@/lib/api';
 import { scoreTextClass, statusBadge } from '@/lib/ui';
-import { fmtDateTime, relativeTime } from '@/lib/format';
-
-const RETENTION_MS = 60 * 60 * 1000;
+import { fmtDateTime, humanizeMinutes, relativeTime } from '@/lib/format';
 
 /** Remaining time before a scan is auto-deleted, as a live countdown. */
-function retention(createdAt: string, now: number) {
-  const ms = new Date(createdAt).getTime() + RETENTION_MS - now;
+function retention(createdAt: string, now: number, windowMs: number) {
+  const ms = new Date(createdAt).getTime() + windowMs - now;
   if (ms <= 0) return { text: 'expiring…', tone: 'expired' as const };
   const total = Math.floor(ms / 1000);
   const m = Math.floor(total / 60);
   const s = total % 60;
   const text = `${m}:${String(s).padStart(2, '0')}`;
-  const tone = ms < 5 * 60 * 1000 ? ('urgent' as const) : ms < 15 * 60 * 1000 ? ('warn' as const) : ('ok' as const);
+  // Thresholds scale with the window so short windows still show urgency.
+  const tone = ms < windowMs * 0.1 ? ('urgent' as const) : ms < windowMs * 0.3 ? ('warn' as const) : ('ok' as const);
   return { text, tone };
 }
 
@@ -27,7 +26,14 @@ const TIMER_CLASS: Record<'ok' | 'warn' | 'urgent' | 'expired', string> = {
   expired: 'bg-red-100 text-red-800 border-red-300',
 };
 
-export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
+export function RecentScans({
+  scans: initial,
+  retentionMinutes = 60,
+}: {
+  scans: RecentScan[];
+  retentionMinutes?: number;
+}) {
+  const windowMs = retentionMinutes * 60 * 1000;
   const [scans, setScans] = useState<RecentScan[]>(initial);
   const [removing, setRemoving] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -100,8 +106,8 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
           <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         <span>
-          Scans are kept for <strong>1 hour</strong>, then automatically deleted — download a report
-          to keep it.
+          Scans are kept for <strong>{humanizeMinutes(retentionMinutes)}</strong>, then
+          automatically deleted — download a report to keep it.
         </span>
       </div>
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
@@ -129,7 +135,7 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
               </div>
               <div className="flex items-center gap-4">
                 {(() => {
-                  const r = retention(s.createdAt, now);
+                  const r = retention(s.createdAt, now, windowMs);
                   return (
                     <span
                       suppressHydrationWarning

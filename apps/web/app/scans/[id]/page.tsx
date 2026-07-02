@@ -5,6 +5,7 @@ import { ScanDetailView } from '@/components/ScanDetail';
 export const dynamic = 'force-dynamic';
 
 export default async function ScanPage({ params }: { params: { id: string } }) {
+  const retentionMinutes = Number(process.env.SCAN_RETENTION_MINUTES) || 60;
   let scan;
   try {
     scan = await fetchScan(params.id);
@@ -18,7 +19,7 @@ export default async function ScanPage({ params }: { params: { id: string } }) {
   if (!scan) notFound();
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
-      <ScanDetailView initial={scan} />
+      <ScanDetailView initial={scan} retentionMinutes={retentionMinutes} />
     </div>
   );
 }

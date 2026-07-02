@@ -28,6 +28,18 @@ export function relativeTime(iso?: string | null): string {
   return rtf.format(-Math.round(mo / 12), 'year');
 }
 
+/** Human label for a minutes count, e.g. 60 → "1 hour", 30 → "30 minutes". */
+export function humanizeMinutes(min: number): string {
+  if (min % 60 === 0) {
+    const h = min / 60;
+    return `${h} hour${h === 1 ? '' : 's'}`;
+  }
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'}`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h}h ${m}m`;
+}
+
 /** Human duration between two timestamps, e.g. "1.4s" / "2m 5s". */
 export function duration(start?: string | null, end?: string | null): string {
   if (!start || !end) return '—';

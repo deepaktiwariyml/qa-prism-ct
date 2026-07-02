@@ -4,7 +4,7 @@ import { loadEnv } from './env.js';
 import { createRedis, createScanQueue } from './queue.js';
 import { createScanWorker } from './worker.js';
 import { buildServer } from './server.js';
-import { startScanCleanup } from './cleanup.js';
+import { startScanCleanup, retentionMinutes } from './cleanup.js';
 
 const env = loadEnv();
 
@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   await app.listen({ port: env.PORT, host: env.HOST });
   app.log.info(`scan worker listening on queue "${queue.name}"`);
   startScanCleanup(app.log);
-  app.log.info('scan retention: scans older than 1h are auto-deleted');
+  app.log.info(`scan retention: scans older than ${retentionMinutes()}m are auto-deleted`);
 }
 
 let shuttingDown = false;
