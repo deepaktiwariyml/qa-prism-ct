@@ -1,16 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { RecentScan } from '@/lib/api';
 import { scoreTextClass, statusBadge } from '@/lib/ui';
 import { fmtDateTime, relativeTime } from '@/lib/format';
+
+const RETENTION_MS = 60 * 60 * 1000;
+
+/** Remaining time before a scan is auto-deleted, as a live countdown. */
+function retention(createdAt: string, now: number) {
+  const ms = new Date(createdAt).getTime() + RETENTION_MS - now;
+  if (ms <= 0) return { text: 'expiring…', tone: 'expired' as const };
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  const text = `${m}:${String(s).padStart(2, '0')}`;
+  const tone = ms < 5 * 60 * 1000 ? ('urgent' as const) : ms < 15 * 60 * 1000 ? ('warn' as const) : ('ok' as const);
+  return { text, tone };
+}
+
+const TIMER_CLASS: Record<'ok' | 'warn' | 'urgent' | 'expired', string> = {
+  ok: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  warn: 'bg-amber-50 text-amber-800 border-amber-200',
+  urgent: 'bg-red-50 text-red-700 border-red-200',
+  expired: 'bg-red-100 text-red-800 border-red-300',
+};
 
 export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
   const [scans, setScans] = useState<RecentScan[]>(initial);
   const [removing, setRemoving] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick every second so the retention countdown badges stay live.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   async function remove(scan: RecentScan) {
     const label = scan.target.name || scan.target.value;
@@ -67,9 +95,15 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
           className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500"
         />
       </div>
-      <p className="mb-3 text-xs text-slate-400">
-        Scans are kept for 1 hour, then automatically deleted — download a report to keep it.
-      </p>
+      <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0" aria-hidden="true">
+          <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span>
+          Scans are kept for <strong>1 hour</strong>, then automatically deleted — download a report
+          to keep it.
+        </span>
+      </div>
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
       {filtered.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
@@ -94,6 +128,22 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
                 </div>
               </div>
               <div className="flex items-center gap-4">
+                {(() => {
+                  const r = retention(s.createdAt, now);
+                  return (
+                    <span
+                      suppressHydrationWarning
+                      title="Time left before this scan is auto-deleted"
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-xs font-medium tabular-nums ${TIMER_CLASS[r.tone]}`}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                        <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+                        <path d="M12 8v4l2.5 2.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                      </svg>
+                      {r.text}
+                    </span>
+                  );
+                })()}
                 {s.score ? (
                   <span className={`text-lg font-semibold ${scoreTextClass(s.score.overall)}`}>
                     {s.score.overall}
