@@ -101,6 +101,16 @@ export function ScanDetailView({ initial }: { initial: ScanDetail }) {
             </div>
           </div>
         </div>
+        <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-6 py-2.5 text-sm text-amber-800">
+          <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M12 8v4l2.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+          <span>
+            This scan is kept for <strong>1 hour</strong>, then automatically deleted. Download the
+            report to keep a copy.
+          </span>
+        </div>
         {!settled && (
           <div className="border-t border-blue-100 bg-blue-50 px-6 py-2.5 text-sm text-blue-800">
             Scan in progress — this page updates automatically as scanners report in.

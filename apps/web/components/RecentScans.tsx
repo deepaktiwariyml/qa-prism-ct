@@ -67,6 +67,9 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
           className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500"
         />
       </div>
+      <p className="mb-3 text-xs text-slate-400">
+        Scans are kept for 1 hour, then automatically deleted — download a report to keep it.
+      </p>
       {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
       {filtered.length === 0 ? (
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
@@ -105,6 +108,23 @@ export function RecentScans({ scans: initial }: { scans: RecentScan[] }) {
                 </span>
               </div>
             </Link>
+            <a
+              href={`/api/scans/${s.id}/report`}
+              download
+              aria-label="Download report"
+              title="Download report"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+                <path
+                  d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </a>
             <button
               type="button"
               onClick={() => remove(s)}
