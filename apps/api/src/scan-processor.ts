@@ -1,4 +1,4 @@
-import type { Finding, Location, Scanner, ScanContext } from '@qa-prism/core';
+import type { Finding, Location, Pillar, Scanner, ScanContext } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { scoreScan } from '@qa-prism/scoring';
 import { accessibilityScanner } from '@qa-prism/scanner-accessibility';
@@ -8,11 +8,11 @@ import { automationScanner } from '@qa-prism/scanner-automation';
 import type { ScanJobData } from './queue.js';
 
 /** All four pillar scanners. Each no-ops for target kinds it doesn't handle. */
-const SCANNERS: Scanner[] = [
-  accessibilityScanner,
-  performanceScanner,
-  securityScanner,
-  automationScanner,
+const SCANNERS: Array<{ pillar: Pillar; scan: Scanner }> = [
+  { pillar: 'accessibility', scan: accessibilityScanner },
+  { pillar: 'performance', scan: performanceScanner },
+  { pillar: 'security', scan: securityScanner },
+  { pillar: 'automation', scan: automationScanner },
 ];
 
 type FindingRow = Awaited<ReturnType<ReturnType<typeof getPrisma>['finding']['findMany']>>[number];
@@ -53,7 +53,13 @@ export async function processScan(data: ScanJobData): Promise<void> {
 
   try {
     const ctx: ScanContext = { scanId: data.scanId, target: data.target, options: data.options };
-    const results = await Promise.all(SCANNERS.map((scan) => scan(ctx)));
+    // Interactive/authenticated scans restrict to the pillars that reuse the
+    // captured session (via options.only).
+    const only = Array.isArray(data.options?.only)
+      ? (data.options.only as string[])
+      : null;
+    const active = only ? SCANNERS.filter((s) => only.includes(s.pillar)) : SCANNERS;
+    const results = await Promise.all(active.map((s) => s.scan(ctx)));
     const findings = results.flat();
 
     if (findings.length > 0) {

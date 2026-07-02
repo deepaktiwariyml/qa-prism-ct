@@ -142,7 +142,14 @@ export const accessibilityScanner: Scanner = async (ctx: ScanContext): Promise<F
     const browser = await chromium.launch({ headless: true });
     // axe-core/playwright requires pages from an explicit context, not
     // browser.newPage() (see axe-core-npm error-handling docs).
-    context = await browser.newContext();
+    // An interactive scan passes storageState (cookies/localStorage) so the
+    // context is already logged in.
+    const storageState = ctx.options?.storageState;
+    context = await browser.newContext(
+      storageState
+        ? ({ storageState } as Parameters<typeof browser.newContext>[0])
+        : undefined,
+    );
 
     // Landing page first — if it can't load, that's the single info finding.
     let landingFindings: Finding[];

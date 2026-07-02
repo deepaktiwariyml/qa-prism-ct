@@ -51,6 +51,25 @@ function cookieFlags(raw: string): { name: string; secure: boolean; httpOnly: bo
   };
 }
 
+/** Build a Cookie header from an interactive session's storageState cookies. */
+function cookieHeaderFor(url: string, storageState: unknown): string | undefined {
+  if (!storageState || typeof storageState !== 'object') return undefined;
+  const cookies = (storageState as { cookies?: Array<{ name: string; value: string; domain: string }> })
+    .cookies;
+  if (!Array.isArray(cookies) || cookies.length === 0) return undefined;
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+  const matched = cookies.filter((c) => {
+    const d = c.domain.replace(/^\./, '');
+    return host === d || host.endsWith(`.${d}`);
+  });
+  return matched.length ? matched.map((c) => `${c.name}=${c.value}`).join('; ') : undefined;
+}
+
 /**
  * Passive security scanner (spec §6.3). Only issues GET requests and reads what
  * the server returns — never any active exploitation, fuzzing, or auth attacks.
@@ -60,11 +79,16 @@ export const securityScanner: Scanner = async (ctx: ScanContext): Promise<Findin
   if (ctx.target.kind !== 'url') return [];
   const url = ctx.target.value;
 
+  // Interactive scans pass a session; include its cookies so passive checks run
+  // against the authenticated page. Still GET-only — no state change.
+  const cookieHeader = cookieHeaderFor(url, ctx.options?.storageState);
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
+      headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
       signal: AbortSignal.timeout(SECURITY_CONFIG.timeoutMs),
     });
   } catch (err) {

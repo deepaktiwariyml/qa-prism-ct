@@ -34,6 +34,7 @@
     "bullmq": "^5.28.0",
     "fastify": "^5.1.0",
     "ioredis": "^5.4.1",
+    "playwright": "^1.48.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

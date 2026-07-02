@@ -7,6 +7,26 @@ import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
+import {
+  BROWSER_VIEWPORT,
+  captureAndClose,
+  closeBrowserSession,
+  createBrowserSession,
+  currentUrl,
+  forwardInput,
+  screenshot,
+  type InputEvent,
+} from './browser-session.js';
+
+const BrowserCreateBody = z.object({ url: z.string().min(1) });
+const InputBody = z.object({
+  type: z.enum(['click', 'move', 'scroll', 'text', 'key']),
+  x: z.number().optional(),
+  y: z.number().optional(),
+  deltaY: z.number().optional(),
+  text: z.string().optional(),
+  key: z.string().optional(),
+});
 
 const ImpactBody = z.object({
   prUrl: z.string().min(1),
@@ -177,6 +197,73 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     });
     if (!scan) return reply.code(404).send({ error: 'scan not found' });
     return scan;
+  });
+
+  // Interactive browser session: launch a real browser the user can drive
+  // (log in), then CONFIRM scans that exact authenticated session.
+  app.post('/browser', async (req, reply) => {
+    const parsed = BrowserCreateBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const session = await createBrowserSession(parsed.data.url);
+    return { ...session, ...BROWSER_VIEWPORT };
+  });
+
+  app.get('/browser/:id/screenshot', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const png = await screenshot(id);
+    if (!png) return reply.code(404).send({ error: 'session not found' });
+    reply.header('Content-Type', 'image/jpeg');
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(png);
+  });
+
+  app.post('/browser/:id/input', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = InputBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid input' });
+    const ok = await forwardInput(id, parsed.data as InputEvent);
+    if (!ok) return reply.code(404).send({ error: 'session not found' });
+    return { ok: true, url: currentUrl(id) };
+  });
+
+  app.get('/browser/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const url = currentUrl(id);
+    if (url === null) return reply.code(404).send({ error: 'session not found' });
+    return { url };
+  });
+
+  app.post('/browser/:id/confirm', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const captured = await captureAndClose(id);
+    if (!captured) return reply.code(404).send({ error: 'session not found' });
+
+    const existing = await prisma.target.findFirst({
+      where: { kind: 'url', value: captured.url },
+    });
+    const targetRow =
+      existing ??
+      (await prisma.target.create({
+        data: { name: captured.url, kind: 'url', value: captured.url },
+      }));
+    const scan = await prisma.scan.create({ data: { targetId: targetRow.id, status: 'queued' } });
+    await queue.add('scan', {
+      scanId: scan.id,
+      target: { kind: 'url', value: captured.url },
+      // Authenticated scan: reuse the logged-in session; only the pillars that
+      // cleanly use it (Lighthouse re-navigates, so performance is skipped).
+      options: {
+        storageState: captured.storageState as unknown as Record<string, unknown>,
+        only: ['accessibility', 'security'],
+      },
+    });
+    return reply.code(202).send({ scanId: scan.id, url: captured.url });
+  });
+
+  app.delete('/browser/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await closeBrowserSession(id);
+    return reply.code(204).send();
   });
 
   // Delete a scan (its findings + score cascade via the schema).
