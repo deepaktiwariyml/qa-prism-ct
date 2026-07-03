@@ -24,7 +24,7 @@ jobs:
           script_stop: true
           script: |
             set -e
-            cd ~/QA-PRISM
+            cd ~/qa-prism-ct
             git fetch --all
             git reset --hard origin/main
             # Rewrite .env from GitHub secrets (never committed to the repo).

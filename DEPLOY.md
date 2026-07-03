@@ -110,8 +110,8 @@ warning.)
 ## 5. Get the code + secrets onto the VM
 
 ```bash
-cd ~ && git clone https://github.com/<you>/QA-PRISM.git
-cd QA-PRISM
+cd ~ && git clone https://github.com/deepaktiwariyml/qa-prism-ct.git
+cd qa-prism-ct
 cp .env.deploy.example .env
 nano .env          # fill every value (see below), then save
 chmod 600 .env
@@ -177,7 +177,7 @@ GitHub, never in the repo) and runs `docker compose up -d --build`.
 
 ```bash
 # Update manually (if not using the Action)
-cd ~/QA-PRISM && git pull && docker compose up -d --build
+cd ~/qa-prism-ct && git pull && docker compose up -d --build
 
 # Logs / status
 docker compose logs -f web
