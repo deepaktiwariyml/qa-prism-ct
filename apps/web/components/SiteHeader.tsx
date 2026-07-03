@@ -29,13 +29,15 @@ export function SiteHeader({
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="flex items-baseline gap-2">
+        <Link href="/" className="flex items-center gap-2.5">
+          <Logo className="h-9 w-9" />
+          <span className="flex items-center gap-2">
             <span className="text-[17px] font-semibold tracking-tight text-slate-900">
               Code &amp; Theory
             </span>
-            <span className="hidden text-xs font-medium text-slate-400 sm:inline">QA Prism</span>
+            <span className="hidden rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm sm:inline">
+              QA Prism
+            </span>
           </span>
         </Link>
         <nav className="hidden items-center gap-1 md:flex">
