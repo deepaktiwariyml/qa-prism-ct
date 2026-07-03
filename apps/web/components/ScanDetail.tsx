@@ -288,6 +288,40 @@ function FilterChip({
   );
 }
 
+/** Render text with any http(s) URLs turned into new-tab links. */
+function linkify(text: string): React.ReactNode {
+  const out: React.ReactNode[] = [];
+  const re = /(https?:\/\/[^\s]+)/g;
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    let url = m[0];
+    let trail = '';
+    const tm = url.match(/[.,;:!?)\]}'"]+$/); // don't swallow trailing punctuation
+    if (tm) {
+      trail = tm[0];
+      url = url.slice(0, -trail.length);
+    }
+    out.push(
+      <a
+        key={key++}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="break-all text-indigo-600 underline underline-offset-2 hover:text-indigo-700"
+      >
+        {url}
+      </a>,
+    );
+    if (trail) out.push(trail);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
 function FindingRow({ finding }: { finding: Finding }) {
   const loc = [finding.location?.path, finding.location?.selector, finding.location?.line ? `line ${finding.location.line}` : null]
     .filter(Boolean)
@@ -306,10 +340,12 @@ function FindingRow({ finding }: { finding: Finding }) {
       </div>
       <div className="mt-1.5 font-medium">{finding.title}</div>
       {loc && <div className="mt-0.5 truncate text-xs text-slate-500">{loc}</div>}
-      {finding.description && <p className="mt-1.5 text-sm text-slate-600">{finding.description}</p>}
+      {finding.description && (
+        <p className="mt-1.5 text-sm text-slate-600">{linkify(finding.description)}</p>
+      )}
       {finding.remediation && (
         <p className="mt-1.5 text-sm text-slate-700">
-          <span className="font-medium text-slate-500">Fix:</span> {finding.remediation}
+          <span className="font-medium text-slate-500">Fix:</span> {linkify(finding.remediation)}
         </p>
       )}
       {finding.tags.length > 0 && (

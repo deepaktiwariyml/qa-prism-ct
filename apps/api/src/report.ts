@@ -66,6 +66,31 @@ function esc(s: unknown): string {
   );
 }
 
+/** Escape text, turning any http(s) URLs into new-tab links. */
+function linkifyEsc(text: unknown): string {
+  const s = String(text ?? '');
+  const re = /(https?:\/\/[^\s]+)/g;
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    out += esc(s.slice(last, m.index));
+    let url = m[0];
+    let trail = '';
+    const tm = url.match(/[.,;:!?)\]}'"]+$/);
+    if (tm) {
+      trail = tm[0];
+      url = url.slice(0, -trail.length);
+    }
+    const safe = esc(url);
+    out += `<a href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>`;
+    if (trail) out += esc(trail);
+    last = m.index + m[0].length;
+  }
+  out += esc(s.slice(last));
+  return out;
+}
+
 function scoreColor(score: number): string {
   if (score >= 90) return '#10b981';
   if (score >= 70) return '#f59e0b';
@@ -148,8 +173,8 @@ export function buildHtmlReport(scan: ReportScan): string {
       </div>
       <div class="ftitle">${esc(f.title)}</div>
       ${f.location ? `<div class="loc">${locationOf(f.location)}</div>` : ''}
-      ${f.description ? `<div class="desc">${esc(f.description)}</div>` : ''}
-      ${f.remediation ? `<div class="fix"><strong>Fix:</strong> ${esc(f.remediation)}</div>` : ''}
+      ${f.description ? `<div class="desc">${linkifyEsc(f.description)}</div>` : ''}
+      ${f.remediation ? `<div class="fix"><strong>Fix:</strong> ${linkifyEsc(f.remediation)}</div>` : ''}
       ${f.tags?.length ? `<div class="tags">${f.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
     </div>`,
     )
@@ -187,6 +212,7 @@ export function buildHtmlReport(scan: ReportScan): string {
   .loc{font-size:12px;color:#64748b;margin-top:2px}
   .desc{font-size:13px;color:#475569;margin-top:6px}
   .fix{font-size:13px;color:#334155;margin-top:6px}
+  .desc a,.fix a{color:#4f46e5;word-break:break-all}
   .tags{margin-top:8px}
   .tag{display:inline-block;background:#f1f5f9;color:#64748b;border-radius:5px;padding:1px 7px;font-size:11px;margin-right:4px}
   .corr{background:#eef2ff;border-color:#c7d2fe}
