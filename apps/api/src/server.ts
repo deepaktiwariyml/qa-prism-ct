@@ -351,11 +351,13 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     await queue.add('scan', {
       scanId: scan.id,
       target: { kind: 'url', value: captured.url },
-      // Authenticated scan: reuse the logged-in session; only the pillars that
-      // cleanly use it (Lighthouse re-navigates, so performance is skipped).
+      // Accessibility + security reuse the captured session; performance runs
+      // its own Lighthouse pass on the URL. We include performance so the pillar
+      // reflects a real measurement instead of a misleading default 100 (for an
+      // authenticated-only page it measures the pre-login view).
       options: {
         storageState: captured.storageState as unknown as Record<string, unknown>,
-        only: ['accessibility', 'security'],
+        only: ['accessibility', 'performance', 'security'],
       },
     });
     return reply.code(202).send({ scanId: scan.id, url: captured.url });

@@ -188,14 +188,17 @@ export const performanceScanner: Scanner = async (ctx: ScanContext): Promise<Fin
   }
 
   if (!anySucceeded) {
+    // Surface as a real (medium) finding, not a silent info — otherwise the
+    // pillar would default to a perfect 100 and look healthy when in fact
+    // nothing was measured.
     return [
       finding(
         ctx.scanId,
         'probe-failed',
-        'info',
-        'Performance probe could not run',
-        'Lighthouse could not analyse the target.',
-        'Verify the URL is reachable and that a Chromium binary is available.',
+        'medium',
+        'Performance could not be measured',
+        'Lighthouse failed to analyse the target, so Core Web Vitals were not captured. This is not a clean bill of health — the scan simply could not measure performance.',
+        'Verify the URL is reachable and that a Chromium binary is available, then re-run the scan.',
         url,
         {},
         ['scan-error'],
