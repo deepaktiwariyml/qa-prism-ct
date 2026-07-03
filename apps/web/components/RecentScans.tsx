@@ -124,9 +124,21 @@ export function RecentScans({
           >
             <Link
               href={`/scans/${s.id}`}
-              className="flex min-w-0 flex-1 items-center justify-between p-4"
+              className="flex min-w-0 flex-1 items-center gap-3 p-4"
             >
-              <div className="min-w-0">
+              <img
+                src={`/api/scans/${s.id}/thumbnail`}
+                alt=""
+                aria-hidden="true"
+                ref={(el) => {
+                  // onLoad can miss cache-completed images, so reveal here too.
+                  if (el && el.complete && el.naturalWidth > 0) el.classList.remove('hidden');
+                }}
+                onLoad={(e) => e.currentTarget.classList.remove('hidden')}
+                onError={(e) => e.currentTarget.classList.add('hidden')}
+                className="hidden h-12 w-20 shrink-0 rounded-md border border-slate-200 object-cover"
+              />
+              <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{s.target.name || s.target.value}</div>
                 <div className="truncate text-xs text-slate-500">{s.target.value}</div>
                 <div className="mt-0.5 text-xs text-slate-400" suppressHydrationWarning title={fmtDateTime(s.createdAt)}>

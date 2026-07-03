@@ -20,6 +20,7 @@ export interface ScanDetail {
   startedAt: string | null;
   finishedAt: string | null;
   target: { name: string; value: string; kind: string };
+  hasScreenshot?: boolean;
   findings: Finding[];
   score: {
     overall: number;

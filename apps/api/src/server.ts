@@ -58,6 +58,15 @@ function crossLinkFindings(
   return [...ids].slice(0, 20);
 }
 
+const AuthSchema = z.object({
+  loginUrl: z.string().optional(),
+  username: z.string().min(1),
+  password: z.string().min(1),
+  usernameSelector: z.string().optional(),
+  passwordSelector: z.string().optional(),
+  submitSelector: z.string().optional(),
+});
+
 const CreateScanBody = z.object({
   name: z.string().optional(),
   target: z.object({
@@ -65,6 +74,8 @@ const CreateScanBody = z.object({
     value: z.string().min(1),
   }),
   options: z.record(z.string(), z.unknown()).optional(),
+  /** Optional scripted-login credentials for an authenticated scan. */
+  auth: AuthSchema.optional(),
 });
 
 /**
@@ -80,12 +91,19 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
 
   app.get('/health', async () => ({ ok: true }));
 
-  // Recent scans for the dashboard home (target + overall score).
+  // Recent scans for the dashboard home (target + overall score). Explicit
+  // select so the screenshot/thumbnail bytes never bloat the JSON list.
   app.get('/scans', async () => {
     return prisma.scan.findMany({
       orderBy: { createdAt: 'desc' },
       take: 25,
-      include: { target: true, score: { select: { overall: true } } },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        target: { select: { name: true, value: true, kind: true } },
+        score: { select: { overall: true } },
+      },
     });
   });
 
@@ -95,7 +113,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
     }
-    const { target, name, options } = parsed.data;
+    const { target, name, options, auth } = parsed.data;
 
     const existing = await prisma.target.findFirst({
       where: { kind: target.kind, value: target.value },
@@ -109,7 +127,13 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     const scan = await prisma.scan.create({
       data: { targetId: targetRow.id, status: 'queued' },
     });
-    await queue.add('scan', { scanId: scan.id, target, options });
+    // Fold auth into the job options. When credentials are present, remove the
+    // job from Redis on completion/failure so they don't linger.
+    const jobData = { scanId: scan.id, target, options: { ...options, auth } };
+    await queue.add('scan', jobData, {
+      removeOnComplete: true,
+      removeOnFail: auth ? true : 50,
+    });
 
     return reply.code(202).send({ scanId: scan.id, status: scan.status });
   });
@@ -189,7 +213,8 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     };
   });
 
-  // Poll a scan: status, findings, and score once computed.
+  // Poll a scan: status, findings, and score once computed. The screenshot/
+  // thumbnail bytes are served by dedicated endpoints, never inlined here.
   app.get('/scans/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const scan = await prisma.scan.findUnique({
@@ -197,7 +222,28 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       include: { findings: true, score: true, target: true },
     });
     if (!scan) return reply.code(404).send({ error: 'scan not found' });
-    return scan;
+    const { screenshot, thumbnail, ...rest } = scan;
+    return { ...rest, hasScreenshot: screenshot != null, hasThumbnail: thumbnail != null };
+  });
+
+  // Scan screenshot + thumbnail (JPEG bytes). Best-effort artifacts, so 404
+  // when absent — the UI renders <img onError> and simply hides it.
+  app.get('/scans/:id/screenshot', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const row = await prisma.scan.findUnique({ where: { id }, select: { screenshot: true } });
+    if (!row?.screenshot) return reply.code(404).send({ error: 'no image' });
+    reply.header('Content-Type', 'image/jpeg');
+    reply.header('Cache-Control', 'public, max-age=300');
+    return reply.send(Buffer.from(row.screenshot));
+  });
+
+  app.get('/scans/:id/thumbnail', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const row = await prisma.scan.findUnique({ where: { id }, select: { thumbnail: true } });
+    if (!row?.thumbnail) return reply.code(404).send({ error: 'no image' });
+    reply.header('Content-Type', 'image/jpeg');
+    reply.header('Cache-Control', 'public, max-age=300');
+    return reply.send(Buffer.from(row.thumbnail));
   });
 
   // Interactive browser session: launch a real browser the user can drive

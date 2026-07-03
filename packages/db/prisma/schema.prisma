@@ -70,6 +70,12 @@ model Scan {
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
 
+  /// A viewport screenshot of the scanned page (JPEG bytes) and a small
+  /// thumbnail. Populated best-effort for `url` targets; deleted with the scan
+  /// via retention. Bytes so the downloadable report can inline them offline.
+  screenshot Bytes?
+  thumbnail  Bytes?
+
   target   Target     @relation(fields: [targetId], references: [id], onDelete: Cascade)
   findings Finding[]
   score    ScanScore?

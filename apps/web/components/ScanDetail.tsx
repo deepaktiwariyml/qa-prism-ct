@@ -124,6 +124,20 @@ export function ScanDetailView({
         )}
       </div>
 
+      {/* Screenshot of the scanned page (headless capture) */}
+      {scan.hasScreenshot && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700">
+            Scanned page
+          </div>
+          <img
+            src={`/api/scans/${scan.id}/screenshot`}
+            alt="Screenshot of the scanned page"
+            className="block w-full"
+          />
+        </div>
+      )}
+
       {/* Pillar cards */}
       {score && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

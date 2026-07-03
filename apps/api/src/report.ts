@@ -24,6 +24,8 @@ export interface ReportScan {
   target: { name: string; value: string; kind: string };
   findings: ReportFinding[];
   score: ReportScore | null;
+  /** Viewport screenshot bytes; inlined as a data URI so the report stays self-contained. */
+  screenshot?: Uint8Array | Buffer | null;
 }
 
 const SEVERITY_ORDER: Record<string, number> = {
@@ -111,6 +113,10 @@ export function buildHtmlReport(scan: ReportScan): string {
   );
   const overall = scan.score?.overall ?? 0;
 
+  const shot = scan.screenshot
+    ? `<div class="card"><h2>Scanned page</h2><img class="shot" alt="Screenshot of the scanned page" src="data:image/jpeg;base64,${Buffer.from(scan.screenshot).toString('base64')}"/></div>`
+    : '';
+
   const pillarRows = (scan.score?.pillars ?? [])
     .map((p) => {
       const counts = Object.entries(p.findingCounts)
@@ -186,6 +192,7 @@ export function buildHtmlReport(scan: ReportScan): string {
   .corr{background:#eef2ff;border-color:#c7d2fe}
   .corr ul{margin:0;padding-left:18px}.corr li{font-size:14px;color:#3730a3;margin-bottom:6px}
   .foot{color:#94a3b8;font-size:12px;text-align:center;margin-top:8px}
+  .shot{width:100%;border-radius:10px;border:1px solid #e2e8f0;display:block}
 </style></head>
 <body><div class="wrap">
   <div class="brand">QA <span>Prism</span> — scan report</div>
@@ -202,6 +209,8 @@ export function buildHtmlReport(scan: ReportScan): string {
     </div>
     <div class="gauge">${gaugeSvg(overall)}<div class="num" style="color:${scoreColor(overall)}">${overall}</div><div class="den">/ 100</div></div>
   </div></div>
+
+  ${shot}
 
   <div class="card"><h2>Pillar scores</h2><table>${pillarRows || '<tr><td class="muted">No score.</td></tr>'}</table></div>
 

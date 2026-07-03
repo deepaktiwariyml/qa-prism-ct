@@ -122,6 +122,8 @@ export function ScanPreviewModal({ url, onClose }: Props) {
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
+    // Let paste through to the onPaste handler; otherwise forward keystrokes.
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') return;
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       void sendInput({ type: 'text', text: e.key });
@@ -129,6 +131,15 @@ export function ScanPreviewModal({ url, onClose }: Props) {
       e.preventDefault();
       void sendInput({ type: 'key', key: e.key });
     }
+  }
+
+  function onPaste(e: React.ClipboardEvent) {
+    // The remote browser has its own (empty) clipboard, so ⌘/Ctrl+V can't work
+    // there. Read the pasted text here and forward it as typed input.
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    e.preventDefault();
+    void sendInput({ type: 'text', text });
   }
 
   async function confirmScan() {
@@ -198,6 +209,7 @@ export function ScanPreviewModal({ url, onClose }: Props) {
               ref={surfaceRef}
               tabIndex={0}
               onKeyDown={onKeyDown}
+              onPaste={onPaste}
               className="mx-auto w-full max-w-5xl outline-none"
             >
               <img

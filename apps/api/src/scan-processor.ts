@@ -5,7 +5,35 @@ import { accessibilityScanner } from '@qa-prism/scanner-accessibility';
 import { performanceScanner } from '@qa-prism/scanner-performance';
 import { securityScanner } from '@qa-prism/scanner-security';
 import { automationScanner } from '@qa-prism/scanner-automation';
+import { randomUUID } from 'node:crypto';
+import { captureScreenshot } from './capture.js';
+import { performLogin, type LoginRecipe } from './login.js';
 import type { ScanJobData } from './queue.js';
+
+/** Auth block a caller may attach to options for a scripted-login scan. */
+interface AuthOptions extends LoginRecipe {
+  loginUrl?: string;
+  username: string;
+  password: string;
+}
+
+function loginFailedFinding(scanId: string, message: string): Finding {
+  return {
+    id: randomUUID(),
+    scanId,
+    pillar: 'security',
+    severity: 'high',
+    code: 'auth.login-failed',
+    title: 'Authenticated scan could not log in',
+    description: `The scripted login step failed, so the target was not scanned while authenticated: ${message}`,
+    location: { path: 'login' },
+    remediation:
+      'Check the credentials and login URL. If the form is unusual, provide username/password/submit selectors for this target, or use an interactive session.',
+    tags: ['auth', 'scan-error'],
+    evidence: { message },
+    createdAt: new Date().toISOString(),
+  };
+}
 
 /** All four pillar scanners. Each no-ops for target kinds it doesn't handle. */
 const SCANNERS: Array<{ pillar: Pillar; scan: Scanner }> = [
@@ -52,15 +80,64 @@ export async function processScan(data: ScanJobData): Promise<void> {
   });
 
   try {
-    const ctx: ScanContext = { scanId: data.scanId, target: data.target, options: data.options };
-    // Interactive/authenticated scans restrict to the pillars that reuse the
-    // captured session (via options.only).
-    const only = Array.isArray(data.options?.only)
-      ? (data.options.only as string[])
-      : null;
-    const active = only ? SCANNERS.filter((s) => only.includes(s.pillar)) : SCANNERS;
-    const results = await Promise.all(active.map((s) => s.scan(ctx)));
-    const findings = results.flat();
+    let storageState = data.options?.storageState;
+    let only = Array.isArray(data.options?.only) ? (data.options.only as string[]) : null;
+    let injected: Finding[] = [];
+    let skipScanners = false;
+
+    // Scripted headless login: authenticate first, then reuse the session for
+    // the pillars that cleanly use it. On failure, record a finding and finish
+    // rather than scanning a logged-out page.
+    const auth = data.options?.auth as AuthOptions | undefined;
+    if (auth?.username && auth?.password && data.target.kind === 'url') {
+      try {
+        const result = await performLogin({
+          loginUrl: auth.loginUrl || data.target.value,
+          username: auth.username,
+          password: auth.password,
+          recipe: {
+            usernameSelector: auth.usernameSelector,
+            passwordSelector: auth.passwordSelector,
+            submitSelector: auth.submitSelector,
+          },
+        });
+        storageState = result.storageState as typeof storageState;
+        only = only ?? ['accessibility', 'security'];
+      } catch (err) {
+        injected = [loginFailedFinding(data.scanId, err instanceof Error ? err.message : String(err))];
+        skipScanners = true;
+      }
+    }
+
+    const ctx: ScanContext = {
+      scanId: data.scanId,
+      target: data.target,
+      options: { ...data.options, storageState },
+    };
+    const active = skipScanners
+      ? []
+      : only
+        ? SCANNERS.filter((s) => only!.includes(s.pillar))
+        : SCANNERS;
+
+    // Run the scanners and, for URL targets, grab a screenshot of the (possibly
+    // authenticated) page in parallel. Capture is best-effort and never throws.
+    const capturePromise =
+      !skipScanners && data.target.kind === 'url'
+        ? captureScreenshot(data.target.value, storageState)
+        : Promise.resolve(null);
+    const [results, capture] = await Promise.all([
+      Promise.all(active.map((s) => s.scan(ctx))),
+      capturePromise,
+    ]);
+    const findings = [...injected, ...results.flat()];
+
+    if (capture) {
+      await prisma.scan.update({
+        where: { id: data.scanId },
+        data: { screenshot: capture.screenshot, thumbnail: capture.thumbnail },
+      });
+    }
 
     if (findings.length > 0) {
       await prisma.finding.createMany({
