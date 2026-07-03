@@ -1,0 +1,20 @@
+# Caddy reverse proxy — terminates TLS and forwards to the web app.
+#
+# SITE_ADDRESS controls the certificate strategy:
+#   - a real domain (e.g. qa.example.com)  -> automatic Let's Encrypt HTTPS
+#   - :443                                 -> self-signed cert (see note below)
+#
+# HTTPS matters: the login cookie is `Secure` in production, so the app only
+# works over https. Prefer a real (even free) domain so certs are trusted.
+{$SITE_ADDRESS} {
+	reverse_proxy web:3000
+}
+
+# ── No domain? ────────────────────────────────────────────────────────────
+# Set SITE_ADDRESS=:443 and uncomment the block below instead of the one above
+# to serve a self-signed cert on the VM's IP (browsers show a one-time warning):
+#
+# :443 {
+# 	tls internal
+# 	reverse_proxy web:3000
+# }

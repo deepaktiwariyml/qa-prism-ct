@@ -161,7 +161,10 @@ async function submit(page: Page, submitBtn: Locator | null, passwordField: Loca
  */
 export async function performLogin(opts: LoginOptions): Promise<LoginResult> {
   assertSafeTarget(opts.loginUrl);
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  });
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();

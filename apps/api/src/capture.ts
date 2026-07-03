@@ -9,7 +9,12 @@ const THUMB_WIDTH = 400;
 // Flags that keep headless screenshots reliable, especially inside containers
 // (no /dev/shm, no GPU compositor) where authenticated SPAs otherwise render
 // as a blank/black frame.
-const LAUNCH_ARGS = ['--disable-gpu', '--disable-dev-shm-usage', '--force-color-profile=srgb'];
+const LAUNCH_ARGS = [
+  '--no-sandbox',
+  '--disable-gpu',
+  '--disable-dev-shm-usage',
+  '--force-color-profile=srgb',
+];
 
 export interface Capture {
   screenshot: Buffer;

@@ -140,7 +140,11 @@ export const accessibilityScanner: Scanner = async (ctx: ScanContext): Promise<F
   const baseUrl = ctx.target.value;
   let context: BrowserContext | undefined;
   try {
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      // Required for headless Chromium running as root inside a container.
+      args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    });
     // axe-core/playwright requires pages from an explicit context, not
     // browser.newPage() (see axe-core-npm error-handling docs).
     // An interactive scan passes storageState (cookies/localStorage) so the
