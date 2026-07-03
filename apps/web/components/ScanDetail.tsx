@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PILLARS, SEVERITIES, SEVERITY_RANK, type Finding, type Pillar, type Severity } from '@qa-prism/core';
 import type { ScanDetail } from '@/lib/api';
 import { PILLAR_COLOR, PILLAR_LABEL, SEVERITY_BADGE, statusBadge } from '@/lib/ui';
@@ -17,12 +18,36 @@ export function ScanDetailView({
   initial: ScanDetail;
   retentionMinutes?: number;
 }) {
+  const router = useRouter();
   const [scan, setScan] = useState<ScanDetail>(initial);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [pillarFilter, setPillarFilter] = useState<Pillar | 'all'>('all');
   const [severityFilter, setSeverityFilter] = useState<Severity | 'all'>('all');
 
   const settled = scan.status === 'done' || scan.status === 'failed';
+
+  async function rescan() {
+    setRescanning(true);
+    setRescanError(null);
+    try {
+      const res = await fetch('/api/scans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: scan.target.name || scan.target.value,
+          target: { kind: scan.target.kind, value: scan.target.value },
+        }),
+      });
+      if (!res.ok) throw new Error(`API responded ${res.status}`);
+      const { scanId } = (await res.json()) as { scanId: string };
+      router.push(`/scans/${scanId}`);
+    } catch (err) {
+      setRescanError(String(err));
+      setRescanning(false);
+    }
+  }
 
   useEffect(() => {
     if (settled) return;
@@ -98,12 +123,23 @@ export function ScanDetailView({
               >
                 Download report
               </a>
+              <button
+                type="button"
+                onClick={rescan}
+                disabled={rescanning}
+                className="rounded-lg border border-indigo-300 px-3 py-1.5 text-center text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-50"
+              >
+                {rescanning ? 'Starting…' : '↻ Rescan'}
+              </button>
               <Link
                 href="/dashboard"
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-center text-sm hover:bg-slate-50"
               >
                 New scan
               </Link>
+              {rescanError && (
+                <p className="max-w-[12rem] text-right text-xs text-red-600">{rescanError}</p>
+              )}
             </div>
           </div>
         </div>
