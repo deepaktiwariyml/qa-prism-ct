@@ -18,11 +18,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const password = process.env.APP_PASSWORD;
   const cookie = cookies().get(COOKIE_NAME)?.value;
   const authed = Boolean(password) && cookie === (await sessionToken(password!));
+  const funEnabled = process.env.FUN_ENABLED === 'true';
 
   return (
     <html lang="en" className={inter.variable}>
       <body className="flex min-h-screen flex-col bg-white text-slate-900 antialiased">
-        <SiteHeader authed={authed} />
+        <SiteHeader authed={authed} funEnabled={funEnabled} />
         <div className="flex-1">{children}</div>
         <SiteFooter />
       </body>

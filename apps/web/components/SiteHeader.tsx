@@ -11,8 +11,15 @@ const NAV = [
   { href: '/modules', label: 'Modules' },
 ];
 
-export function SiteHeader({ authed = false }: { authed?: boolean }) {
+export function SiteHeader({
+  authed = false,
+  funEnabled = false,
+}: {
+  authed?: boolean;
+  funEnabled?: boolean;
+}) {
   const pathname = usePathname();
+  const nav = funEnabled ? [...NAV, { href: '/fun', label: '🎮 Fun' }] : NAV;
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -29,7 +36,7 @@ export function SiteHeader({ authed = false }: { authed?: boolean }) {
           </span>
         </Link>
         <nav className="hidden items-center gap-1 md:flex">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link
