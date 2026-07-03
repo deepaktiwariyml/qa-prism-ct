@@ -36,7 +36,8 @@ export function SiteHeader({
           </span>
         </Link>
         <nav className="hidden items-center gap-1 md:flex">
-          {nav.map((item) => {
+          {authed &&
+            nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link
