@@ -1,5 +1,7 @@
-# QA Prism — full self-hosted stack. Only Caddy is exposed to the network;
-# Postgres, Redis, the API and the web app stay on the internal Docker network.
+# QA Prism — self-hosted stack that plugs into an EXISTING Traefik reverse proxy
+# (e.g. the Hostinger n8n VPS). Traefik terminates TLS and routes
+# ${SITE_ADDRESS} -> web:3000. Postgres/Redis/API stay private on this project's
+# own network; only `web` joins Traefik's shared network.
 services:
   postgres:
     image: postgres:16
@@ -59,24 +61,27 @@ services:
       NODE_ENV: production
     depends_on:
       - api
+    networks:
+      - default
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK}
+      - traefik.http.routers.qaprism.rule=Host(`${SITE_ADDRESS}`)
+      - traefik.http.routers.qaprism.entrypoints=${TRAEFIK_ENTRYPOINT}
+      - traefik.http.routers.qaprism.tls=true
+      - traefik.http.routers.qaprism.tls.certresolver=${CERT_RESOLVER}
+      - traefik.http.services.qaprism.loadbalancer.server.port=3000
     restart: unless-stopped
 
-  caddy:
-    image: caddy:2
-    ports:
-      - '80:80'
-      - '443:443'
-    environment:
-      SITE_ADDRESS: ${SITE_ADDRESS}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - web
-    restart: unless-stopped
+# `default` is this project's private network (api ↔ postgres ↔ redis ↔ web).
+# `traefik` is the EXISTING shared proxy network — declared external so we join
+# it rather than create it.
+networks:
+  default:
+  traefik:
+    name: ${TRAEFIK_NETWORK}
+    external: true
 
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:
