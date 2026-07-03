@@ -5,6 +5,7 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
+import { createLlmClient } from '@qa-prism/llm';
 import { buildHtmlReport, type ReportScan } from './report.js';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
@@ -33,6 +34,34 @@ const ImpactBody = z.object({
   prUrl: z.string().min(1),
   githubToken: z.string().optional(),
 });
+
+const FunWordsBody = z.object({
+  level: z.enum(['beginner', 'medium', 'hard']),
+  count: z.number().int().min(1).max(16),
+  minLen: z.number().int().min(2).max(20),
+  maxLen: z.number().int().min(2).max(20),
+});
+
+// Belt-and-braces filter on top of the "no negatives" prompt instruction.
+const BLOCKED_WORDS = new Set([
+  'ERROR', 'CRASH', 'FAIL', 'FAILURE', 'VIRUS', 'MALWARE', 'BREACH', 'EXPLOIT',
+  'SPAM', 'DEATH', 'KILL', 'HATE', 'WAR', 'BOMB', 'DRUG', 'ATTACK', 'THREAT',
+  'WEAPON', 'RANSOM', 'PHISHING', 'FRAUD',
+]);
+
+function sanitizeFunWords(raw: unknown[], minLen: number, maxLen: number, count: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const w of raw) {
+    const up = String(w).toUpperCase().replace(/[^A-Z]/g, '');
+    if (up.length < minLen || up.length > maxLen) continue;
+    if (BLOCKED_WORDS.has(up) || seen.has(up)) continue;
+    seen.add(up);
+    out.push(up);
+    if (out.length >= count) break;
+  }
+  return out;
+}
 
 /** Attach existing-finding ids that overlap an impact area's files/name. */
 function crossLinkFindings(
@@ -211,6 +240,31 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       areas,
       limitations: result.limitations,
     };
+  });
+
+  // FUN word-search: generate company-themed IT words via the LLM. Safe by
+  // construction (prompt + sanitize); returns [] on any failure so the client
+  // falls back to its static pool and the game always works.
+  app.post('/fun/words', async (req, reply) => {
+    const parsed = FunWordsBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const { level, count, minLen, maxLen } = parsed.data;
+    const company = process.env.COMPANY_NAME || 'Code and Theory';
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ words: z.array(z.string()) });
+      const result = await llm.completeJSON({
+        system:
+          `You generate word lists for a family-friendly word-search game. Every word MUST come from the information technology and software industry and be relevant to the company "${company}" and the kind of work it does (digital products, design, engineering, web, cloud, data, AI). ` +
+          `Rules: single real English words; ${minLen}-${maxLen} letters; letters A-Z only (no spaces, digits, hyphens, or accents); UPPERCASE. Use positive or neutral professional vocabulary ONLY — absolutely no offensive, violent, sensitive, or negative words.`,
+        prompt: `Give me ${count} distinct words for the "${level}" difficulty. Return JSON: {"words":["DESIGN","CLOUD", ...]}.`,
+        schema,
+      });
+      const words = sanitizeFunWords(result.words, minLen, maxLen, count);
+      return { words, company };
+    } catch {
+      return { words: [], company };
+    }
   });
 
   // Poll a scan: status, findings, and score once computed. The screenshot/

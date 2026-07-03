@@ -14,6 +14,8 @@ export interface LevelConfig {
   size: number;
   wordCount: number;
   seconds: number;
+  minLen: number;
+  maxLen: number;
   directions: Direction[];
   pool: string[];
 }
@@ -69,10 +71,12 @@ export const LEVELS: Record<LevelId, LevelConfig> = {
   beginner: {
     id: 'beginner',
     label: 'Beginner',
-    blurb: 'Short IT terms · straight lines',
+    blurb: 'Short tech terms · straight lines',
     size: 9,
     wordCount: 4,
     seconds: 120,
+    minLen: 3,
+    maxLen: 6,
     directions: [RIGHT, DOWN],
     pool: IT_WORDS.beginner,
   },
@@ -83,6 +87,8 @@ export const LEVELS: Record<LevelId, LevelConfig> = {
     size: 11,
     wordCount: 6,
     seconds: 100,
+    minLen: 5,
+    maxLen: 9,
     directions: [RIGHT, DOWN, DIAG_DR, DIAG_UR],
     pool: IT_WORDS.medium,
   },
@@ -93,6 +99,8 @@ export const LEVELS: Record<LevelId, LevelConfig> = {
     size: 13,
     wordCount: 8,
     seconds: 80,
+    minLen: 7,
+    maxLen: 12,
     directions: [RIGHT, DOWN, DIAG_DR, DIAG_UR, LEFT, UP, DIAG_DL, DIAG_UL],
     pool: IT_WORDS.hard,
   },
@@ -113,9 +121,25 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-/** Pick `count` distinct words from the pool that fit the grid. */
-function pickWords(pool: string[], count: number, size: number): string[] {
-  const eligible = shuffle(pool.filter((w) => w.length <= size));
+/** Pick `count` distinct words from the source that fit the grid + length band. */
+function pickWords(
+  source: string[],
+  count: number,
+  size: number,
+  minLen: number,
+  maxLen: number,
+): string[] {
+  const seen = new Set<string>();
+  const eligible = shuffle(
+    source
+      .map((w) => w.toUpperCase().replace(/[^A-Z]/g, ''))
+      .filter((w) => {
+        if (w.length < minLen || w.length > Math.min(maxLen, size)) return false;
+        if (seen.has(w)) return false;
+        seen.add(w);
+        return true;
+      }),
+  );
   return eligible.slice(0, count);
 }
 
@@ -128,14 +152,16 @@ function inBounds(size: number, r: number, c: number): boolean {
  * allowed directions, then fill the rest with random letters. Only the words
  * actually placed are returned as targets, so the "find" list is always exact.
  */
-export function generatePuzzle(config: LevelConfig): Puzzle {
+export function generatePuzzle(config: LevelConfig, candidates?: string[]): Puzzle {
   const { size, directions } = config;
   const grid: string[][] = Array.from({ length: size }, () =>
     Array.from({ length: size }, () => ''),
   );
   const placements: Placement[] = [];
-  // Longest first — easier to fit before the grid fills up.
-  const words = pickWords(config.pool, config.wordCount, size).sort(
+  // Prefer supplied (LLM-generated, company-themed) words; fall back to the
+  // static pool so the game always works. Longest first — easier to fit.
+  const source = candidates && candidates.length > 0 ? [...candidates, ...config.pool] : config.pool;
+  const words = pickWords(source, config.wordCount, size, config.minLen, config.maxLen).sort(
     (a, b) => b.length - a.length,
   );
 

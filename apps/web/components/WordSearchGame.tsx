@@ -12,7 +12,7 @@ import {
   type Puzzle,
 } from '@/lib/wordSearch';
 
-type Phase = 'menu' | 'playing' | 'over';
+type Phase = 'menu' | 'loading' | 'playing' | 'over';
 type Result = 'win' | 'timeout';
 
 const BEST_KEY = 'qa-prism-fun-best';
@@ -91,7 +91,7 @@ function fmtTime(s: number): string {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-export function WordSearchGame() {
+export function WordSearchGame({ companyName = 'Code and Theory' }: { companyName?: string }) {
   const [phase, setPhase] = useState<Phase>('menu');
   const [config, setConfig] = useState<LevelConfig | null>(null);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
@@ -129,18 +129,40 @@ export function WordSearchGame() {
 
   const startLevel = useCallback((level: LevelConfig) => {
     ctx(); // unlock audio within the user gesture
-    const p = generatePuzzle(level);
     setConfig(level);
-    setPuzzle(p);
-    setFound(new Set());
-    setFoundCells(new Set());
-    setSel([]);
-    setWrong(new Set());
-    setScore(0);
-    setStreak(0);
-    setResult(null);
-    setTimeLeft(level.seconds);
-    setPhase('playing');
+    setPhase('loading');
+    void (async () => {
+      let candidates: string[] = [];
+      try {
+        const res = await fetch('/api/fun/words', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            level: level.id,
+            count: level.wordCount + 4,
+            minLen: level.minLen,
+            maxLen: Math.min(level.maxLen, level.size),
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { words?: string[] };
+          if (Array.isArray(data.words)) candidates = data.words;
+        }
+      } catch {
+        // fall back to the static pool inside generatePuzzle
+      }
+      const p = generatePuzzle(level, candidates);
+      setPuzzle(p);
+      setFound(new Set());
+      setFoundCells(new Set());
+      setSel([]);
+      setWrong(new Set());
+      setScore(0);
+      setStreak(0);
+      setResult(null);
+      setTimeLeft(level.seconds);
+      setPhase('playing');
+    })();
   }, []);
 
   const endGame = useCallback(
@@ -273,11 +295,12 @@ export function WordSearchGame() {
     return (
       <div className="mx-auto max-w-3xl">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            QA Sprint <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Search</span>
+          <h1 className="text-3xl font-extrabold tracking-tight">
+            Byte<span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Hunt</span>
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Find the hidden IT words before the clock runs out. Pick a level.
+            Hunt down the hidden tech words before the clock runs out — themed around{' '}
+            <span className="font-semibold text-slate-700">{companyName}</span> and the software world.
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -312,6 +335,17 @@ export function WordSearchGame() {
     );
   }
 
+  if (phase === 'loading') {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col items-center justify-center py-24 text-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600" />
+        <p className="mt-4 text-sm text-slate-500">
+          Summoning <span className="font-semibold text-slate-700">{companyName}</span> words…
+        </p>
+      </div>
+    );
+  }
+
   if (!puzzle || !config) return null;
 
   /* ------------------------------- playing ------------------------------- */
@@ -320,10 +354,13 @@ export function WordSearchGame() {
       {/* HUD */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            QA Sprint <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Search</span>
+          <h1 className="text-xl font-extrabold tracking-tight">
+            Byte<span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Hunt</span>
           </h1>
-          <p className="text-xs text-slate-500">{config.label} · find {puzzle.words.length} words</p>
+          <p className="text-xs text-slate-500">
+            {config.label} · find {puzzle.words.length} · by{' '}
+            <span className="font-medium text-slate-600">{companyName}</span>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <span className={`flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-semibold tabular-nums ${timeTone}`}>
@@ -388,18 +425,22 @@ export function WordSearchGame() {
         })}
       </div>
 
-      {/* grid */}
-      <div className="relative rounded-2xl border border-slate-200 bg-white p-3">
+      {/* grid — sized as a square bounded by viewport height so it never scrolls */}
+      <div className="relative rounded-2xl border border-slate-200 bg-white p-2">
         <div
-          ref={gridRef}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          className="grid touch-none select-none gap-1"
-          style={{ gridTemplateColumns: `repeat(${puzzle.size}, minmax(0, 1fr))` }}
+          className="mx-auto"
+          style={{ width: 'min(100%, calc(100dvh - 300px))' }}
         >
-          {puzzle.grid.map((row, r) =>
+          <div
+            ref={gridRef}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            className="grid touch-none select-none gap-1"
+            style={{ gridTemplateColumns: `repeat(${puzzle.size}, minmax(0, 1fr))` }}
+          >
+            {puzzle.grid.map((row, r) =>
             row.map((ch, c) => {
               const key = cellKey(r, c);
               const isFound = foundCells.has(key);
@@ -424,6 +465,7 @@ export function WordSearchGame() {
               );
             }),
           )}
+          </div>
         </div>
 
         {/* game-over overlay */}

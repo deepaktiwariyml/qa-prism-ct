@@ -6,9 +6,10 @@ export const dynamic = 'force-dynamic';
 /** The FUN section is gated behind FUN_ENABLED — hidden entirely when off. */
 export default function FunPage() {
   if (process.env.FUN_ENABLED !== 'true') notFound();
+  const companyName = process.env.COMPANY_NAME || 'Code and Theory';
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <WordSearchGame />
+    <div className="mx-auto max-w-3xl px-4 py-6">
+      <WordSearchGame companyName={companyName} />
     </div>
   );
 }
