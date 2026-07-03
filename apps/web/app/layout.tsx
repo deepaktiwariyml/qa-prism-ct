@@ -9,7 +9,7 @@ import { COOKIE_NAME, sessionToken } from '@/lib/auth';
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
-  title: 'QA Prism — Unified quality intelligence',
+  title: 'QA Prism · Code & Theory',
   description:
     'One place to understand product quality across accessibility, performance, security, and automation — plus PR impact analysis and framework scaffolding.',
 };

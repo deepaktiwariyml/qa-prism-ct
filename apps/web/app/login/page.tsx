@@ -42,10 +42,13 @@ function LoginForm() {
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Logo />
-        <span className="text-lg font-semibold tracking-tight">
-          QA <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Prism</span>
+      <div className="mb-6 flex items-center gap-2.5">
+        <Logo className="h-9 w-9" />
+        <span className="leading-tight">
+          <span className="block text-lg font-semibold tracking-tight text-slate-900">
+            Code &amp; Theory
+          </span>
+          <span className="block text-xs font-medium text-slate-400">QA Prism</span>
         </span>
       </div>
       <form onSubmit={onSubmit} className="rounded-2xl border border-slate-200 bg-white p-6">

@@ -31,8 +31,11 @@ export function SiteHeader({
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
         <Link href="/" className="flex items-center gap-2">
           <Logo />
-          <span className="text-[17px] font-semibold tracking-tight">
-            QA <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Prism</span>
+          <span className="flex items-baseline gap-2">
+            <span className="text-[17px] font-semibold tracking-tight text-slate-900">
+              Code &amp; Theory
+            </span>
+            <span className="hidden text-xs font-medium text-slate-400 sm:inline">QA Prism</span>
           </span>
         </Link>
         <nav className="hidden items-center gap-1 md:flex">

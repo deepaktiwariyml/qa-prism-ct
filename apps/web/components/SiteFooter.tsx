@@ -7,7 +7,10 @@ export function SiteFooter({ authed = false }: { authed?: boolean }) {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Logo className="h-5 w-5" />
-          <span>QA Prism — unified quality intelligence for QA engineers.</span>
+          <span>
+            QA Prism — quality intelligence, built by{' '}
+            <strong className="font-semibold text-slate-700">Code &amp; Theory</strong>.
+          </span>
         </div>
         {authed && (
           <div className="flex gap-4 text-sm text-slate-500">
