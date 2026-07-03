@@ -2,7 +2,6 @@
 
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Logo } from '@/components/Logo';
 
 /** Only allow same-site absolute paths as a redirect target (no open redirect). */
 function safeFrom(value: string | null): string {
@@ -42,17 +41,6 @@ function LoginForm() {
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center px-6">
-      <div className="mb-6 flex items-center gap-3">
-        <Logo className="h-11 w-11" />
-        <span className="leading-tight">
-          <span className="block text-xl font-semibold tracking-tight text-slate-900">
-            Code &amp; Theory
-          </span>
-          <span className="mt-1 inline-block rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm">
-            QA Prism
-          </span>
-        </span>
-      </div>
       <form onSubmit={onSubmit} className="rounded-2xl border border-slate-200 bg-white p-6">
         <h1 className="text-lg font-semibold">Sign in</h1>
         <p className="mt-1 text-sm text-slate-500">Enter the team password to continue.</p>
