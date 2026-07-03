@@ -28,13 +28,16 @@ function fmt(value: number, unit: MetricThreshold['unit']): string {
   return value.toFixed(3);
 }
 
+/** Hard ceiling per Lighthouse run — a hung navigation must not pin a Chrome. */
+const LH_TIMEOUT_MS = 90_000;
+
 async function runLighthouse(url: string, formFactor: FormFactor): Promise<Lhr> {
   const chrome: LaunchedChrome = await launch({
     chromePath: chromium.executablePath(),
     chromeFlags: [...PERF_CONFIG.chromeFlags],
   });
   try {
-    const result = await lighthouse(
+    const run = lighthouse(
       url,
       {
         port: chrome.port,
@@ -48,10 +51,26 @@ async function runLighthouse(url: string, formFactor: FormFactor): Promise<Lhr> 
       },
       undefined,
     );
+    // If Lighthouse hangs, time out so `finally` kills Chrome (no orphan).
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Lighthouse timed out')), LH_TIMEOUT_MS);
+    });
+    let result;
+    try {
+      result = await Promise.race([run, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     if (!result?.lhr) throw new Error('Lighthouse returned no result');
     return result.lhr as unknown as Lhr;
   } finally {
-    await chrome.kill();
+    // kill() reaps the Chrome process tree and its temp profile dir.
+    try {
+      await chrome.kill();
+    } catch {
+      // best effort
+    }
   }
 }
 
