@@ -339,9 +339,7 @@ export function WordSearchGame({ companyName = 'Code and Theory' }: { companyNam
     return (
       <div className="mx-auto flex max-w-3xl flex-col items-center justify-center py-24 text-center">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600" />
-        <p className="mt-4 text-sm text-slate-500">
-          Summoning <span className="font-semibold text-slate-700">{companyName}</span> words…
-        </p>
+        <p className="mt-4 text-sm text-slate-500">Loading game…</p>
       </div>
     );
   }
