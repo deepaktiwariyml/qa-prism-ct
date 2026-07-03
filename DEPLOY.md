@@ -1,8 +1,8 @@
 # Deploying QA Prism
 
-A step-by-step guide from pushing the repo to a live, team-usable app — using
-only free and open-source pieces. Target: one **Oracle Cloud Always Free** VM
-running the whole stack via Docker Compose.
+A step-by-step guide from pushing the repo to a live, team-usable app. Target:
+one **Hostinger VPS** running the whole stack via Docker Compose (all
+open-source; the only paid piece is the VPS you already have).
 
 **What runs where**
 
@@ -51,59 +51,52 @@ That's the source of truth. The server will pull from here.
 
 ---
 
-## 2. Create the free Oracle Cloud VM
+## 2. Prepare the Hostinger VPS
 
-1. Sign up at <https://www.oracle.com/cloud/free/> (a card is needed for identity
-   verification — Always Free is not charged; see the FAQ in the repo notes).
-2. **Compute → Instances → Create instance**:
-   - **Image:** Ubuntu 22.04
-   - **Shape:** `VM.Standard.A1.Flex` (Ampere/ARM) — Always Free allows up to
-     4 OCPU / 24 GB. Pick **2 OCPU / 12 GB** (plenty; leaves headroom in the free
-     allocation).
-   - Add your **SSH public key**.
-3. **Networking → Security List / NSG:** allow **ingress on 80 and 443** from
-   `0.0.0.0/0`. Leave everything else closed.
-4. Note the instance's **public IP**.
+In **hPanel → VPS → your server**:
 
-> Tip: to never worry about idle-instance reclamation, later upgrade the account
-> to **Pay As You Go** — staying within Always Free limits still costs $0, but
-> PAYG instances are exempt from the idle-reclaim policy.
+1. **OS:** if you can pick/rebuild the template, choose **Ubuntu 22.04** — or, to
+   skip the next step, the **"Ubuntu 22.04 with Docker"** application template.
+2. **SSH:** note the server's **IP**, and set an SSH key (VPS → SSH Keys) or use
+   the root password shown in hPanel.
+3. **Firewall:** in **VPS → Firewall**, ensure inbound **22, 80, 443** are
+   allowed (if no rules exist, all traffic is allowed — that's fine to start).
+
+Then connect: `ssh root@<VPS_IP>`.
 
 ---
 
-## 3. Install Docker on the VM
+## 3. Install Docker on the VPS
 
-SSH in (`ssh ubuntu@<PUBLIC_IP>`), then:
+Skip if you used the "with Docker" template (check with `docker --version`).
+Otherwise, on Ubuntu:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y ca-certificates curl git
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc >/dev/null
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-sudo usermod -aG docker $USER && newgrp docker   # run docker without sudo
-
-# Ubuntu on Oracle blocks ports by default at the OS firewall too — open 80/443:
-sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
-sudo netfilter-persistent save 2>/dev/null || true
+apt-get update && apt-get install -y ca-certificates curl git
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | tee /etc/apt/keyrings/docker.asc >/dev/null
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list >/dev/null
+apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 ```
+
+(If the OS firewall `ufw` is active, also run `ufw allow 80,443/tcp`.)
 
 ---
 
-## 4. (Recommended) Get a free hostname for HTTPS
+## 4. Point a domain at the VPS (for HTTPS)
 
-The login cookie is `Secure`, so **the app must be served over HTTPS**. Easiest
-free path — a DuckDNS subdomain:
+The login cookie is `Secure`, so **the app must be served over HTTPS**. Use a
+Hostinger domain (or subdomain):
 
-1. Go to <https://www.duckdns.org>, sign in, create e.g. `qa-prism`.
-2. Point it at your VM's public IP.
-3. Your address is `qa-prism.duckdns.org`.
+1. **hPanel → Domains → your domain → DNS / Nameservers**.
+2. Add an **A record**: name `qa` (or `@` for the root), value = your **VPS IP**,
+   TTL default. → gives you `qa.yourdomain.com`.
+3. Wait a couple of minutes for DNS to propagate.
 
-(No domain? You can set `SITE_ADDRESS=:443` and switch the `Caddyfile` to the
-`tls internal` block — self-signed, works over HTTPS with a one-time browser
-warning.)
+Caddy will fetch a free Let's Encrypt certificate for that hostname
+automatically. (No domain handy? Set `SITE_ADDRESS=:443` and switch the
+`Caddyfile` to its `tls internal` block — self-signed, one-time browser warning.)
 
 ---
 
@@ -162,7 +155,7 @@ the team password with QA. Done. 🎉
 `.github/workflows/deploy.yml` SSHes to the VM and rebuilds on push to `main`.
 In **GitHub → Settings → Secrets and variables → Actions** add:
 
-- **Secrets:** `SSH_HOST` (VM IP), `SSH_USER` (`ubuntu`), `SSH_KEY` (a private
+- **Secrets:** `SSH_HOST` (VPS IP), `SSH_USER` (`root` on Hostinger), `SSH_KEY` (a private
   key whose public half is on the VM), `POSTGRES_PASSWORD`, `APP_PASSWORD`,
   `ANTHROPIC_API_KEY`, `APP_GITHUB_TOKEN`.
 - **Variables:** `COMPANY_NAME`, `SCAN_RETENTION_MINUTES`, `FUN_ENABLED`,
@@ -197,8 +190,9 @@ docker compose up -d         # start
   report to keep one. This is by design.
 - **Authenticated scans** use scripted login (username/password); they don't
   handle SSO/MFA. Performance for a login-gated page measures the pre-login view.
-- **Memory:** Chromium + Lighthouse are the heavy bits; 12 GB is comfortable for
-  a small team. Scans queue under load rather than overwhelming the box.
+- **Memory:** Chromium + Lighthouse are the heavy bits — aim for a VPS plan with
+  **≥ 4 GB RAM** (8 GB is comfortable for a team). Scans queue under load rather
+  than overwhelming the box.
 - **Rotate** `APP_PASSWORD`/`ANTHROPIC_API_KEY` by editing `.env` (or GitHub
   secrets) and re-running `docker compose up -d`.
 - Set a **usage/budget alert** in the Anthropic console as a backstop.
