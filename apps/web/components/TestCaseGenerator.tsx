@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 
 type Status = 'pending' | 'approved' | 'discarded';
+type CaseType = 'positive' | 'negative' | 'edge';
+type TypeFilter = 'all' | CaseType;
 
 interface Column {
   id: string;
@@ -12,27 +14,41 @@ interface Column {
 interface Row {
   id: string;
   text: string;
+  type: CaseType;
   status: Status;
   values: Record<string, string>; // keyed by column id
 }
 
 const uid = () => (typeof crypto !== 'undefined' ? crypto.randomUUID() : String(Math.random()));
 
+const TYPE_BADGE: Record<CaseType, string> = {
+  positive: 'bg-emerald-100 text-emerald-700',
+  negative: 'bg-rose-100 text-rose-700',
+  edge: 'bg-violet-100 text-violet-700',
+};
+const TYPE_LABEL: Record<CaseType, string> = {
+  positive: 'Positive',
+  negative: 'Negative',
+  edge: 'Edge',
+};
+
 export function TestCaseGenerator() {
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
+  const [filling, setFilling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
 
   const counts = useMemo(() => {
-    let approved = 0;
-    let discarded = 0;
+    const c = { total: rows.length, approved: 0, discarded: 0, positive: 0, negative: 0, edge: 0 };
     for (const r of rows) {
-      if (r.status === 'approved') approved++;
-      else if (r.status === 'discarded') discarded++;
+      if (r.status === 'approved') c.approved++;
+      else if (r.status === 'discarded') c.discarded++;
+      c[r.type]++;
     }
-    return { approved, discarded, total: rows.length };
+    return c;
   }, [rows]);
 
   async function generate() {
@@ -47,14 +63,56 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
-      const cases: string[] = Array.isArray(data.testcases) ? data.testcases : [];
+      const cases: Array<{ title: string; type: CaseType }> = Array.isArray(data.testcases)
+        ? data.testcases
+        : [];
       setRows(
-        cases.map((text) => ({ id: uid(), text, status: 'pending' as Status, values: {} })),
+        cases.map((c) => ({
+          id: uid(),
+          text: c.title,
+          type: c.type,
+          status: 'pending' as Status,
+          values: {},
+        })),
       );
+      setTypeFilter('all');
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Fill empty custom-column cells via the LLM. Test case titles are never changed. */
+  async function fillColumns() {
+    if (columns.length === 0 || rows.length === 0) return;
+    setFilling(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/testcases/columns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          testcases: rows.map((r) => r.text),
+          columns: columns.map((c) => c.name || 'Column'),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      const matrix: string[][] = Array.isArray(data.rows) ? data.rows : [];
+      setRows((rs) =>
+        rs.map((r, i) => {
+          const values = { ...r.values };
+          columns.forEach((c, j) => {
+            if (!values[c.id]) values[c.id] = matrix[i]?.[j] ?? '';
+          });
+          return { ...r, values };
+        }),
+      );
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setFilling(false);
     }
   }
 
@@ -86,7 +144,7 @@ export function TestCaseGenerator() {
     );
   }
 
-  /** [header row, ...data rows] including status + all custom columns. */
+  /** Export matrix — classification (type) is UI-only and intentionally excluded. */
   function toMatrix(): string[][] {
     const header = ['#', 'Test Case', 'Status', ...columns.map((c) => c.name || 'Column')];
     const body = rows.map((r, i) => [
@@ -131,6 +189,17 @@ export function TestCaseGenerator() {
     discarded: 'bg-red-50',
   };
 
+  const visibleRows = rows
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => typeFilter === 'all' || r.type === typeFilter);
+
+  const filterChips: Array<{ key: TypeFilter; label: string; n: number }> = [
+    { key: 'all', label: 'All', n: counts.total },
+    { key: 'positive', label: 'Positive', n: counts.positive },
+    { key: 'negative', label: 'Negative', n: counts.negative },
+    { key: 'edge', label: 'Edge', n: counts.edge },
+  ];
+
   return (
     <div>
       <div className="mb-6">
@@ -138,8 +207,9 @@ export function TestCaseGenerator() {
           Test Case <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">Generator</span>
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Describe a feature or paste a requirement — get clear, high-level manual test cases.
-          Approve the ones you want, add your own columns, and export to Excel or PDF.
+          Describe a feature or paste a requirement — get a comprehensive set of clear, high-level
+          manual test cases (positive, negative, and edge). Approve the ones you want, add your own
+          columns, auto-fill them with AI, and export to Excel or PDF.
         </p>
       </div>
 
@@ -178,42 +248,58 @@ export function TestCaseGenerator() {
       {/* Results */}
       {rows.length > 0 && (
         <div className="mt-8">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                {counts.total} test cases
-              </span>
-              <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">
-                {counts.approved} approved
-              </span>
-              <span className="rounded-md bg-red-100 px-2 py-0.5 font-medium text-red-700">
-                {counts.discarded} discarded
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+          {/* Filters (UI only — not exported) */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {filterChips.map((chip) => (
               <button
-                onClick={addColumn}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                key={chip.key}
+                onClick={() => setTypeFilter(chip.key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  typeFilter === chip.key
+                    ? 'bg-slate-900 text-white'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                }`}
               >
-                + Add column
+                {chip.label} <span className="opacity-70">({chip.n})</span>
               </button>
+            ))}
+            <span className="ml-1 text-xs text-slate-400">
+              {counts.approved} approved · {counts.discarded} discarded
+            </span>
+          </div>
+
+          <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={addColumn}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              + Add column
+            </button>
+            {columns.length > 0 && (
               <button
-                onClick={downloadXlsx}
-                className="rounded-lg border border-emerald-300 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                onClick={fillColumns}
+                disabled={filling}
+                className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
               >
-                Download XLSX
+                {filling ? 'Filling…' : '✨ Fill columns with AI'}
               </button>
-              <button
-                onClick={downloadPdf}
-                className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
-              >
-                Download PDF
-              </button>
-            </div>
+            )}
+            <button
+              onClick={downloadXlsx}
+              className="rounded-lg border border-emerald-300 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+            >
+              Download XLSX
+            </button>
+            <button
+              onClick={downloadPdf}
+              className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+            >
+              Download PDF
+            </button>
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
+            <table className="w-full min-w-[760px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="w-10 px-3 py-2.5">#</th>
@@ -240,10 +326,17 @@ export function TestCaseGenerator() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
+                {visibleRows.map(({ r, i }) => (
                   <tr key={r.id} className={`border-b border-slate-100 align-top ${rowTone[r.status]}`}>
                     <td className="px-3 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-3 py-3 text-slate-800">{r.text}</td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${TYPE_BADGE[r.type]}`}
+                      >
+                        {TYPE_LABEL[r.type]}
+                      </span>
+                      <span className="text-slate-800">{r.text}</span>
+                    </td>
                     {columns.map((c) => (
                       <td key={c.id} className="px-3 py-2">
                         <input
@@ -283,8 +376,9 @@ export function TestCaseGenerator() {
             </table>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Tip: click a column header to rename it, fill cells inline, then export — your columns
-            and decisions are included.
+            Tip: click a column header to rename it, then “Fill columns with AI” to auto-populate.
+            Positive / Negative / Edge tags are shown here to help you review — they’re not included
+            in the export.
           </p>
         </div>
       )}
