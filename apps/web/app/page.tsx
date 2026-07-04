@@ -12,7 +12,7 @@ const FLOW = [
   { step: '01', title: 'Point it at a target', body: 'A URL, a repo, or a GitHub PR. One canonical finding shape underpins everything.' },
   { step: '02', title: 'Scanners run in parallel', body: 'Four pillars scan on a queue; each emits normalized findings with severity and remediation.' },
   { step: '03', title: 'Score & correlate', body: 'Findings roll up into pillar and overall scores — and link across pillars where they share an area.' },
-  { step: '04', title: 'Act', body: 'Ship a framework, analyse a PR’s blast radius, and push findings to your tracker.' },
+  { step: '04', title: 'Act', body: 'Generate a manual test plan, scaffold a framework, analyse a PR’s blast radius, and push findings to your tracker.' },
 ];
 
 export default function Landing() {
@@ -37,7 +37,7 @@ export default function Landing() {
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">
             QA Prism scans a target across accessibility, performance, security, and automation,
             correlates what it finds across pillars, analyses the blast radius of a pull request,
-            and scaffolds a runnable test framework — in one place.
+            generates manual test cases, and scaffolds a runnable test framework — in one place.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
@@ -94,7 +94,7 @@ export default function Landing() {
         <div className="mx-auto max-w-6xl px-6 py-20">
           <div className="max-w-2xl">
             <p className="text-sm font-medium text-indigo-600">Modules</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight">Six tools, one platform</h2>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight">Seven tools, one platform</h2>
             <p className="mt-3 text-slate-600">
               Each module is a focused capability. Open any one to see what it does and how to use it.
             </p>

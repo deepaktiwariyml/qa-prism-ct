@@ -13,10 +13,13 @@
   },
   "dependencies": {
     "@qa-prism/core": "workspace:*",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "next": "^14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.13.0"
+    "recharts": "^2.13.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

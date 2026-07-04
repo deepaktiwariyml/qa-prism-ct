@@ -22,6 +22,21 @@ const FunWordsBody = z.object({
   maxLen: z.number().int().min(2).max(20),
 });
 
+const TestCasesBody = z.object({
+  description: z.string().min(3).max(20_000),
+  context: z.string().max(200).optional(),
+});
+
+const FillColumnsBody = z.object({
+  testcases: z.array(z.string().min(1)).min(1).max(200),
+  columns: z.array(z.string().min(1)).min(1).max(12),
+});
+
+// Cheaper model for low-stakes generation (word game, column auto-fill). The
+// quality-critical calls (impact analysis, test-case generation, login field
+// detection) use the default ANTHROPIC_MODEL (Sonnet).
+const FAST_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+
 // Belt-and-braces filter on top of the "no negatives" prompt instruction.
 const BLOCKED_WORDS = new Set([
   'ERROR', 'CRASH', 'FAIL', 'FAILURE', 'VIRUS', 'MALWARE', 'BREACH', 'EXPLOIT',
@@ -234,6 +249,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const llm = createLlmClient();
       const schema = z.object({ words: z.array(z.string()) });
       const result = await llm.completeJSON({
+        model: FAST_MODEL,
         system:
           `You generate word lists for a family-friendly word-search game. Every word MUST come from the information technology and software industry and be relevant to the company "${company}" and the kind of work it does (digital products, design, engineering, web, cloud, data, AI). ` +
           `Rules: single real English words; ${minLen}-${maxLen} letters; letters A-Z only (no spaces, digits, hyphens, or accents); UPPERCASE. Use positive or neutral professional vocabulary ONLY — absolutely no offensive, violent, sensitive, or negative words.`,
@@ -244,6 +260,70 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       return { words, company };
     } catch {
       return { words: [], company };
+    }
+  });
+
+  // LLM test-case generator: turn a feature/requirement description into
+  // clear, one-line manual test cases, each classified positive/negative/edge.
+  app.post('/testcases/generate', async (req, reply) => {
+    const parsed = TestCasesBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const { description, context } = parsed.data;
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({
+        testcases: z
+          .array(
+            z.object({
+              title: z.string().min(1),
+              type: z.enum(['positive', 'negative', 'edge']),
+            }),
+          )
+          .min(1)
+          .max(200),
+      });
+      const result = await llm.completeJSON({
+        system:
+          'You are a senior QA engineer. Given a feature or requirement, produce a COMPREHENSIVE set of clear, ONE-LINE manual test cases a tester can execute — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). Each title is a single concise sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states). Cover all three thoroughly.',
+        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
+        schema,
+      });
+      const testcases = result.testcases
+        .map((t) => ({ title: t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: t.type }))
+        .filter((t) => t.title.length > 0)
+        .slice(0, 200);
+      return { testcases };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Fill user-defined columns for existing test cases via the LLM. The test
+  // case titles are inputs only — they are never changed. Returns a matrix
+  // aligned to the input order: rows[i][j] = value for testcase i, column j.
+  app.post('/testcases/columns', async (req, reply) => {
+    const parsed = FillColumnsBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const { testcases, columns } = parsed.data;
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ rows: z.array(z.array(z.string())) });
+      const numbered = testcases.map((t, i) => `${i + 1}. ${t}`).join('\n');
+      const result = await llm.completeJSON({
+        model: FAST_MODEL,
+        system:
+          'You are a senior QA engineer filling in a test-case table. For each test case (a fixed one-line title you must NOT change or restate) and each requested column, produce a concise, useful cell value inferred from the column name (e.g. "Priority" -> High/Medium/Low; "Preconditions", "Test Steps", "Expected Result", "Test Data" -> a short phrase or sentence). Return JSON with a `rows` matrix where rows[i] is the array of cell values for test case i, one value per column in the exact given order.',
+        prompt: `Columns (in order): ${JSON.stringify(columns)}\n\nTest cases:\n${numbered}\n\nReturn JSON: {"rows":[["col1 value","col2 value", ...], ...]} with exactly ${testcases.length} rows and ${columns.length} values each.`,
+        schema,
+      });
+      // Normalize to an exact testcases × columns matrix (pad/truncate).
+      const rows = testcases.map((_, i) => {
+        const row = result.rows[i] ?? [];
+        return columns.map((__, j) => String(row[j] ?? ''));
+      });
+      return { rows };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 

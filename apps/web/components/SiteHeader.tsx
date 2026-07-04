@@ -5,8 +5,9 @@ import { usePathname } from 'next/navigation';
 import { Logo } from './Logo';
 
 const NAV = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/generator', label: 'Generator' },
+  { href: '/dashboard', label: 'Scan Website' },
+  { href: '/testcases', label: 'Test Cases' },
+  { href: '/generator', label: 'Framework Generator' },
   { href: '/impact', label: 'Impact analyser' },
   { href: '/modules', label: 'Modules' },
 ];
@@ -71,14 +72,6 @@ export function SiteHeader({
               className="rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
             >
               Log in
-            </Link>
-          )}
-          {authed && (
-            <Link
-              href="/dashboard"
-              className="rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
-            >
-              Run a scan
             </Link>
           )}
         </div>
