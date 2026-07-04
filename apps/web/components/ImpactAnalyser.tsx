@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import type { Severity } from '@qa-prism/core';
 import { SEVERITY_BADGE } from '@/lib/ui';
+import { usePersistentState } from '@/lib/usePersistentState';
 
 interface ImpactArea {
   name: string;
@@ -58,11 +59,15 @@ function toCsv(rows: TestCase[]): string {
 }
 
 export function ImpactAnalyser() {
-  const [prUrl, setPrUrl] = useState('');
+  const [prUrl, setPrUrl] = usePersistentState('qa-prism:impact:prUrl', '');
+  // Token is a secret — never persisted.
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImpactResponse | null>(null);
+  const [result, setResult] = usePersistentState<ImpactResponse | null>(
+    'qa-prism:impact:result',
+    null,
+  );
 
   async function analyse(e: React.FormEvent) {
     e.preventDefault();

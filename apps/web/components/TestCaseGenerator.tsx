@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePersistentState } from '@/lib/usePersistentState';
 
 type Scope = 'all' | 'approved';
 
@@ -35,12 +36,12 @@ const TYPE_LABEL: Record<CaseType, string> = {
 };
 
 export function TestCaseGenerator() {
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = usePersistentState('qa-prism:tc:description', '');
   const [busy, setBusy] = useState(false);
   const [filling, setFilling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [columns, setColumns] = useState<Column[]>([]);
+  const [rows, setRows] = usePersistentState<Row[]>('qa-prism:tc:rows', []);
+  const [columns, setColumns] = usePersistentState<Column[]>('qa-prism:tc:columns', []);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [openMenu, setOpenMenu] = useState<'xlsx' | 'pdf' | null>(null);
   const downloadsRef = useRef<HTMLDivElement>(null);
