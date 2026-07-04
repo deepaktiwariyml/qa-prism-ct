@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+type Scope = 'all' | 'approved';
 
 type Status = 'pending' | 'approved' | 'discarded';
 type CaseType = 'positive' | 'negative' | 'edge';
@@ -40,6 +42,20 @@ export function TestCaseGenerator() {
   const [rows, setRows] = useState<Row[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [openMenu, setOpenMenu] = useState<'xlsx' | 'pdf' | null>(null);
+  const downloadsRef = useRef<HTMLDivElement>(null);
+
+  // Close the download dropdown when clicking outside it.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (downloadsRef.current && !downloadsRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openMenu]);
 
   const counts = useMemo(() => {
     const c = { total: rows.length, approved: 0, discarded: 0, positive: 0, negative: 0, edge: 0 };
@@ -143,11 +159,15 @@ export function TestCaseGenerator() {
       rs.map((r) => (r.id === rowId ? { ...r, values: { ...r.values, [colId]: value } } : r)),
     );
   }
+  function setText(rowId: string, text: string) {
+    setRows((rs) => rs.map((r) => (r.id === rowId ? { ...r, text } : r)));
+  }
 
   /** Export matrix — classification (type) is UI-only and intentionally excluded. */
-  function toMatrix(): string[][] {
+  function toMatrix(scope: Scope): string[][] {
+    const source = scope === 'approved' ? rows.filter((r) => r.status === 'approved') : rows;
     const header = ['#', 'Test Case', 'Status', ...columns.map((c) => c.name || 'Column')];
-    const body = rows.map((r, i) => [
+    const body = source.map((r, i) => [
       String(i + 1),
       r.text,
       r.status,
@@ -156,22 +176,26 @@ export function TestCaseGenerator() {
     return [header, ...body];
   }
 
-  async function downloadXlsx() {
+  const fileSuffix = (scope: Scope) => (scope === 'approved' ? '-approved' : '');
+
+  async function downloadXlsx(scope: Scope = 'all') {
+    setOpenMenu(null);
     const XLSX = await import('xlsx');
-    const ws = XLSX.utils.aoa_to_sheet(toMatrix());
+    const ws = XLSX.utils.aoa_to_sheet(toMatrix(scope));
     ws['!cols'] = [{ wch: 5 }, { wch: 60 }, { wch: 12 }, ...columns.map(() => ({ wch: 24 }))];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Test Cases');
-    XLSX.writeFile(wb, 'test-cases.xlsx');
+    XLSX.writeFile(wb, `test-cases${fileSuffix(scope)}.xlsx`);
   }
 
-  async function downloadPdf() {
+  async function downloadPdf(scope: Scope = 'all') {
+    setOpenMenu(null);
     const { jsPDF } = await import('jspdf');
     const autoTable = (await import('jspdf-autotable')).default;
-    const matrix = toMatrix();
+    const matrix = toMatrix(scope);
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFontSize(14);
-    doc.text('Test Cases', 14, 16);
+    doc.text(scope === 'approved' ? 'Test Cases (approved)' : 'Test Cases', 14, 16);
     autoTable(doc, {
       head: [matrix[0] as string[]],
       body: matrix.slice(1) as string[][],
@@ -180,7 +204,7 @@ export function TestCaseGenerator() {
       headStyles: { fillColor: [79, 70, 229] },
       columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 110 } },
     });
-    doc.save('test-cases.pdf');
+    doc.save(`test-cases${fileSuffix(scope)}.pdf`);
   }
 
   const rowTone: Record<Status, string> = {
@@ -284,18 +308,26 @@ export function TestCaseGenerator() {
                 {filling ? 'Filling…' : '✨ Fill columns with AI'}
               </button>
             )}
-            <button
-              onClick={downloadXlsx}
-              className="rounded-lg border border-emerald-300 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
-            >
-              Download XLSX
-            </button>
-            <button
-              onClick={downloadPdf}
-              className="rounded-lg border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
-            >
-              Download PDF
-            </button>
+            <div ref={downloadsRef} className="flex flex-wrap items-center gap-2">
+              <SplitDownload
+                label="Download XLSX"
+                tone="emerald"
+                open={openMenu === 'xlsx'}
+                approvedCount={counts.approved}
+                onAll={() => downloadXlsx('all')}
+                onApproved={() => downloadXlsx('approved')}
+                onToggle={() => setOpenMenu((m) => (m === 'xlsx' ? null : 'xlsx'))}
+              />
+              <SplitDownload
+                label="Download PDF"
+                tone="indigo"
+                open={openMenu === 'pdf'}
+                approvedCount={counts.approved}
+                onAll={() => downloadPdf('all')}
+                onApproved={() => downloadPdf('approved')}
+                onToggle={() => setOpenMenu((m) => (m === 'pdf' ? null : 'pdf'))}
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
@@ -329,13 +361,19 @@ export function TestCaseGenerator() {
                 {visibleRows.map(({ r, i }) => (
                   <tr key={r.id} className={`border-b border-slate-100 align-top ${rowTone[r.status]}`}>
                     <td className="px-3 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-2">
                       <span
-                        className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${TYPE_BADGE[r.type]}`}
+                        className={`mb-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${TYPE_BADGE[r.type]}`}
                       >
                         {TYPE_LABEL[r.type]}
                       </span>
-                      <span className="text-slate-800">{r.text}</span>
+                      <textarea
+                        value={r.text}
+                        onChange={(e) => setText(r.id, e.target.value)}
+                        rows={2}
+                        aria-label="Test case (editable)"
+                        className="w-full resize-y rounded border border-transparent bg-transparent px-2 py-1 text-sm text-slate-800 hover:border-slate-200 focus:border-indigo-400 focus:bg-white focus:outline-none"
+                      />
                     </td>
                     {columns.map((c) => (
                       <td key={c.id} className="px-3 py-2">
@@ -380,6 +418,71 @@ export function TestCaseGenerator() {
             Positive / Negative / Edge tags are shown here to help you review — they’re not included
             in the export.
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Split download button: main action downloads all; the caret opens a menu
+ *  with an "approved only" option. */
+function SplitDownload({
+  label,
+  tone,
+  open,
+  approvedCount,
+  onAll,
+  onApproved,
+  onToggle,
+}: {
+  label: string;
+  tone: 'emerald' | 'indigo';
+  open: boolean;
+  approvedCount: number;
+  onAll: () => void;
+  onApproved: () => void;
+  onToggle: () => void;
+}) {
+  const toneCls =
+    tone === 'emerald'
+      ? 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+      : 'border-indigo-300 text-indigo-700 hover:bg-indigo-50';
+  return (
+    <div className="relative inline-flex">
+      <button
+        onClick={onAll}
+        className={`flex items-center gap-1.5 rounded-l-lg border ${toneCls} px-3 py-1.5 text-sm font-medium`}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+          <path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {label}
+      </button>
+      <button
+        onClick={onToggle}
+        aria-label={`${label} options`}
+        aria-expanded={open}
+        className={`rounded-r-lg border border-l-0 ${toneCls} px-2 py-1.5`}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+          <button
+            onClick={onAll}
+            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            Download all test cases
+          </button>
+          <button
+            onClick={onApproved}
+            disabled={approvedCount === 0}
+            className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Download approved only{approvedCount > 0 ? ` (${approvedCount})` : ''}
+          </button>
         </div>
       )}
     </div>
