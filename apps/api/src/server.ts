@@ -32,6 +32,11 @@ const FillColumnsBody = z.object({
   columns: z.array(z.string().min(1)).min(1).max(12),
 });
 
+// Cheaper model for low-stakes generation (word game, column auto-fill). The
+// quality-critical calls (impact analysis, test-case generation, login field
+// detection) use the default ANTHROPIC_MODEL (Sonnet).
+const FAST_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+
 // Belt-and-braces filter on top of the "no negatives" prompt instruction.
 const BLOCKED_WORDS = new Set([
   'ERROR', 'CRASH', 'FAIL', 'FAILURE', 'VIRUS', 'MALWARE', 'BREACH', 'EXPLOIT',
@@ -244,6 +249,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const llm = createLlmClient();
       const schema = z.object({ words: z.array(z.string()) });
       const result = await llm.completeJSON({
+        model: FAST_MODEL,
         system:
           `You generate word lists for a family-friendly word-search game. Every word MUST come from the information technology and software industry and be relevant to the company "${company}" and the kind of work it does (digital products, design, engineering, web, cloud, data, AI). ` +
           `Rules: single real English words; ${minLen}-${maxLen} letters; letters A-Z only (no spaces, digits, hyphens, or accents); UPPERCASE. Use positive or neutral professional vocabulary ONLY — absolutely no offensive, violent, sensitive, or negative words.`,
@@ -304,6 +310,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const schema = z.object({ rows: z.array(z.array(z.string())) });
       const numbered = testcases.map((t, i) => `${i + 1}. ${t}`).join('\n');
       const result = await llm.completeJSON({
+        model: FAST_MODEL,
         system:
           'You are a senior QA engineer filling in a test-case table. For each test case (a fixed one-line title you must NOT change or restate) and each requested column, produce a concise, useful cell value inferred from the column name (e.g. "Priority" -> High/Medium/Low; "Preconditions", "Test Steps", "Expected Result", "Test Data" -> a short phrase or sentence). Return JSON with a `rows` matrix where rows[i] is the array of cell values for test case i, one value per column in the exact given order.',
         prompt: `Columns (in order): ${JSON.stringify(columns)}\n\nTest cases:\n${numbered}\n\nReturn JSON: {"rows":[["col1 value","col2 value", ...], ...]} with exactly ${testcases.length} rows and ${columns.length} values each.`,
