@@ -22,6 +22,11 @@ const FunWordsBody = z.object({
   maxLen: z.number().int().min(2).max(20),
 });
 
+const TestCasesBody = z.object({
+  description: z.string().min(3).max(20_000),
+  context: z.string().max(200).optional(),
+});
+
 // Belt-and-braces filter on top of the "no negatives" prompt instruction.
 const BLOCKED_WORDS = new Set([
   'ERROR', 'CRASH', 'FAIL', 'FAILURE', 'VIRUS', 'MALWARE', 'BREACH', 'EXPLOIT',
@@ -244,6 +249,31 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       return { words, company };
     } catch {
       return { words: [], company };
+    }
+  });
+
+  // LLM test-case generator: turn a feature/requirement description into a list
+  // of clear, high-level, one-line manual test cases.
+  app.post('/testcases/generate', async (req, reply) => {
+    const parsed = TestCasesBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const { description, context } = parsed.data;
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ testcases: z.array(z.string().min(1)).min(1).max(40) });
+      const result = await llm.completeJSON({
+        system:
+          'You are a senior QA engineer. Given a feature or requirement description, produce clear, high-level, ONE-LINE manual test cases that a tester can execute. Each is a single concise sentence (imperative, no numbering). Cover happy paths, key edge cases, validation, permissions, and error handling. Aim for 8–15 test cases. Do not include steps or expected-results paragraphs — just the one-line case titles.',
+        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nReturn JSON: {"testcases":["...", "..."]}.`,
+        schema,
+      });
+      const testcases = result.testcases
+        .map((t) => t.replace(/^\s*[-*\d.)]+\s*/, '').trim())
+        .filter(Boolean)
+        .slice(0, 40);
+      return { testcases };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
