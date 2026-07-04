@@ -93,6 +93,22 @@ export const MODULES: ModuleDef[] = [
     codes: ['risk: critical', 'risk: high', 'suggested tests', 'related findings'],
   },
   {
+    slug: 'testcases',
+    name: 'Test case generator',
+    tagline: 'Turn a feature description into a review-ready test plan.',
+    accent: 'from-rose-500 to-pink-500',
+    dot: 'bg-rose-500',
+    what: 'Describe a feature (or paste a requirement) and Claude produces a comprehensive set of clear, one-line manual test cases — classified positive, negative, and edge. Review inline: approve or discard each, edit the wording, add your own columns and auto-fill them with AI, then export the plan to Excel or PDF (all cases or approved only).',
+    how: [
+      'Enter a description; Claude generates a comprehensive, classified set of one-line test cases.',
+      'Approve (green) or discard (red) each case, and edit any wording inline.',
+      'Add custom columns (Priority, Steps, Expected Result…) and auto-fill them with AI — test titles never change.',
+      'Export to XLSX or PDF — all test cases, or approved-only.',
+    ],
+    use: { label: 'Open the test case generator', href: '/testcases' },
+    codes: ['positive', 'negative', 'edge', 'export: xlsx / pdf'],
+  },
+  {
     slug: 'generator',
     name: 'Framework generator',
     tagline: 'A runnable automation framework from four dropdowns.',
