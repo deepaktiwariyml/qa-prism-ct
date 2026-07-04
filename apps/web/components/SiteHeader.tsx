@@ -7,7 +7,7 @@ import { Logo } from './Logo';
 const NAV = [
   { href: '/dashboard', label: 'Scan Website' },
   { href: '/testcases', label: 'Test Cases' },
-  { href: '/generator', label: 'Generator' },
+  { href: '/generator', label: 'Framework Generator' },
   { href: '/impact', label: 'Impact analyser' },
   { href: '/modules', label: 'Modules' },
 ];
