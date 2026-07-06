@@ -34,13 +34,25 @@ describe('analyzePr', () => {
     const llm = createLlmClient({
       createMessage: async () =>
         JSON.stringify({
-          areas: [
+          whatsChanged: { summary: 'Adds coupon codes that reduce the order total at checkout.' },
+          whatsImpacted: {
+            summary: 'Checkout totals and coupon validation are the main blast radius.',
+            areas: [
+              {
+                name: 'Checkout coupons',
+                riskLevel: 'high',
+                impact: 'New coupon logic affects order totals.',
+                impactedFiles: ['src/checkout/coupon.ts'],
+                userFlows: ['Apply a coupon at checkout and pay.'],
+              },
+            ],
+          },
+          testingChecklist: [
             {
-              name: 'Checkout coupons',
-              riskLevel: 'high',
-              reason: 'New coupon logic affects order totals.',
-              suggestedTests: ['Apply a valid coupon and confirm the total drops correctly.'],
-              relatedFiles: ['src/checkout/coupon.ts'],
+              area: 'Checkout coupons',
+              priority: 'high',
+              what: 'Apply a valid coupon and confirm the total drops correctly.',
+              risk: 'Incorrect discounts charge customers the wrong amount.',
             },
           ],
         }),
@@ -53,8 +65,10 @@ describe('analyzePr', () => {
 
     expect(result.owner).toBe('acme');
     expect(result.prNumber).toBe(42);
-    expect(result.areas).toHaveLength(1);
-    expect(result.areas[0]!.riskLevel).toBe('high');
+    expect(result.analysis.whatsImpacted.areas).toHaveLength(1);
+    expect(result.analysis.whatsImpacted.areas[0]!.riskLevel).toBe('high');
+    expect(result.analysis.testingChecklist).toHaveLength(1);
+    expect(result.analysis.whatsChanged.summary).toContain('coupon');
     expect(result.changedFiles).toContain('src/checkout/coupon.ts');
     expect(result.limitations.length).toBeGreaterThan(0);
   });

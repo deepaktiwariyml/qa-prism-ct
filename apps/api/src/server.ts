@@ -68,10 +68,10 @@ function sanitizeFunWords(raw: unknown[], minLen: number, maxLen: number, count:
 
 /** Attach existing-finding ids that overlap an impact area's files/name. */
 function crossLinkFindings(
-  area: { name: string; relatedFiles: string[] },
+  area: { name: string; impactedFiles: string[] },
   findings: Array<{ id: string; tags: string[]; location: unknown }>,
 ): string[] {
-  const files = area.relatedFiles.map((f) => f.toLowerCase());
+  const files = area.impactedFiles.map((f) => f.toLowerCase());
   const nameTokens = area.name
     .toLowerCase()
     .split(/\W+/)
@@ -219,10 +219,17 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       orderBy: { createdAt: 'desc' },
       select: { id: true, tags: true, location: true },
     });
-    const areas = result.areas.map((a) => ({
-      ...a,
-      relatedFindingIds: crossLinkFindings(a, findings),
-    }));
+    // Cross-link existing scanner findings into each impacted area.
+    const analysis = {
+      ...result.analysis,
+      whatsImpacted: {
+        ...result.analysis.whatsImpacted,
+        areas: result.analysis.whatsImpacted.areas.map((a) => ({
+          ...a,
+          relatedFindingIds: crossLinkFindings(a, findings),
+        })),
+      },
+    };
 
     const report = await prisma.impactReport.create({
       data: {
@@ -230,7 +237,8 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         prUrl: parsed.data.prUrl,
         prNumber: result.prNumber,
         status: 'done',
-        areas: areas as unknown as Prisma.InputJsonValue,
+        // The `areas` Json column stores the full standardised report.
+        areas: { analysis, changedFiles: result.changedFiles } as unknown as Prisma.InputJsonValue,
       },
     });
 
@@ -240,7 +248,8 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       prNumber: result.prNumber,
       repo: value,
       title: result.title,
-      areas,
+      analysis,
+      changedFiles: result.changedFiles,
       limitations: result.limitations,
     };
   });
