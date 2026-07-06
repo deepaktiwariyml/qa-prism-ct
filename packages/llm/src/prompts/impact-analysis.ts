@@ -25,6 +25,12 @@ export const IMPACT_ANALYSIS_SYSTEM = `You are a senior QA engineer analysing a 
 
 Produce EXACTLY three sections. Be concise and concrete — no filler, no restating the diff line by line.
 
+GROUND EVERYTHING IN THE ACTUAL CHANGE — this is the most important rule:
+- In a unified diff, ONLY lines beginning with "+" (added) or "-" (removed) are the change. Every other line is unchanged CONTEXT, shown only so you can see where the change sits. NEVER describe context lines as if the PR changed them.
+- Every impacted area and every checklist item MUST trace to a specific added/removed line. If a piece of code (a field, a preview config, a placeholder, a helper) appears only in context lines and was not added or removed by this PR, it is OUT OF SCOPE — do not report it, do not test it, even if it looks improvable.
+- Do not speculate about the rest of the file, the wider codebase, or hypothetical features that this PR did not touch.
+- If the PR is tiny (e.g. adding a single field), it is correct and expected to return a single impacted area and just one or two checks. Quality over quantity.
+
 1. "What's Changed" — a high-level summary FROM A QA'S PERSPECTIVE of what this PR does and why it matters for quality. 2-5 sentences in plain language, not a file-by-file recap. Focus on behaviour that a tester would notice.
 
 2. "What's Impacted" — the blast radius, written FOR A QA / MANUAL TESTER, not a developer.
@@ -53,7 +59,7 @@ Severity rubric (riskLevel and priority):
 - low: minor, cosmetic, or well-isolated change.
 - info: no meaningful test impact (docs, comments, formatting).
 
-Prefer 2-6 focused impacted areas. Rank areas and checklist items by risk (most severe first).`;
+Include ONLY areas and checks that trace to added/removed lines — never pad to reach a count. Most PRs need 1-4 areas; a one-line change may need just one. Rank areas and checklist items by risk (most severe first).`;
 
 export interface ImpactPromptInput {
   title: string;
