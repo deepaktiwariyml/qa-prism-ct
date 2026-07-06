@@ -10,7 +10,6 @@ const NAV = [
   { href: '/generator', label: 'Framework Generator' },
   { href: '/impact', label: 'Impact analyser' },
   { href: '/consumption', label: 'Usage' },
-  { href: '/modules', label: 'Modules' },
 ];
 
 export function SiteHeader({
