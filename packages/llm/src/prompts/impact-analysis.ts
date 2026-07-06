@@ -52,12 +52,14 @@ GROUND EVERYTHING IN THE ACTUAL CHANGE — this is the most important rule:
    - what: a concrete, actionable check a human can follow — not "test the feature", but e.g. "log in as a returning user and confirm the cart total updates when quantity changes".
    - risk: what would break, or the risk this check guards against.
 
-Severity rubric (riskLevel and priority):
-- critical: blocks core user flows, or a change to auth/payments/data-integrity with direct exposure.
-- high: major user-facing behaviour change, or broad blast radius across many dependents.
-- medium: meaningful but contained change to a single feature.
-- low: minor, cosmetic, or well-isolated change.
-- info: no meaningful test impact (docs, comments, formatting).
+Severity rubric (riskLevel and priority) — judge by BLAST RADIUS and DATA/BEHAVIOUR risk, not by how many lines changed:
+- critical: blocks core user flows, or touches auth / payments / data-integrity with direct exposure.
+- high: a change to a shared DATA MODEL, SCHEMA, API/CONTRACT, or persisted field (adding/removing/renaming a field, endpoint, type, or enum). These are high even when the diff is tiny, because every downstream consumer (front-end, queries, pipelines, integrations) inherits the change and may behave differently for missing vs default values. Also high for any major user-facing behaviour change or broad dependent fan-out.
+- medium: a meaningful but contained functional change to a single feature that does not alter a shared data model or contract.
+- low: minor or well-isolated changes with no data/behaviour effect — e.g. editorial/help/placeholder text, labels, CMS list-preview display, styling.
+- info: no meaningful test impact (docs, comments, formatting, pure renames of local variables).
+
+A brand-new schema field almost always ranks HIGH — do not down-rank it just because it has "no enforced behaviour yet"; the untyped/absent-vs-default ambiguity IS the risk. Cosmetic authoring-UI tweaks (placeholder text, preview thumbnails) rank low or info.
 
 Include ONLY areas and checks that trace to added/removed lines — never pad to reach a count. Most PRs need 1-4 areas; a one-line change may need just one. Rank areas and checklist items by risk (most severe first).`;
 
