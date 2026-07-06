@@ -24,10 +24,16 @@ interface ImpactAnalysis {
   whatsImpacted: { summary: string; areas: ImpactArea[] };
   testingChecklist: ChecklistItem[];
 }
+interface TicketRef {
+  key: string;
+  url: string;
+  source: 'jira' | 'linear' | 'other';
+}
 interface ImpactResponse {
   prNumber: number;
   repo: string;
   title: string;
+  tickets?: TicketRef[];
   analysis: ImpactAnalysis;
   changedFiles: string[];
   limitations: string[];
@@ -174,6 +180,24 @@ export function ImpactAnalyser() {
               <p className="text-sm text-slate-500">
                 {result.repo} · PR #{result.prNumber}
               </p>
+              {result.tickets && result.tickets.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {result.tickets.map((t) => (
+                    <a
+                      key={t.key}
+                      href={t.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" aria-hidden="true">
+                        <path d="M9 17H7A5 5 0 0 1 7 7h2m6 0h2a5 5 0 0 1 0 10h-2m-7-5h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      {t.key}
+                    </a>
+                  ))}
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
                   {result.changedFiles.length} file{result.changedFiles.length === 1 ? '' : 's'} changed

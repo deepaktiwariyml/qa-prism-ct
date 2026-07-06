@@ -7,3 +7,4 @@ export {
   type RawImpactAnalysis,
 } from './analyze.js';
 export { parseGitHubPrUrl, type PrRef } from './parse-url.js';
+export { extractTickets, type TicketRef } from './tickets.js';

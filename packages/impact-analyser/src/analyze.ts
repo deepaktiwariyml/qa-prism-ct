@@ -8,6 +8,7 @@ import {
 } from '@qa-prism/llm';
 import { fetchPr, type ChangedFile, type FetchImpl } from './github.js';
 import { parseGitHubPrUrl } from './parse-url.js';
+import { extractTickets, type TicketRef } from './tickets.js';
 
 /**
  * Max total patch characters sent to the LLM (bounded context — spec §7).
@@ -62,6 +63,7 @@ export interface ImpactResult {
   repo: string;
   prNumber: number;
   title: string;
+  tickets: TicketRef[];
   analysis: RawImpactAnalysis;
   changedFiles: string[];
   limitations: string[];
@@ -137,6 +139,7 @@ export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Pr
     repo: ref.repo,
     prNumber: ref.number,
     title: pr.title,
+    tickets: extractTickets(`${pr.title}\n${pr.body}`, { jiraBaseUrl: process.env.JIRA_BASE_URL }),
     analysis: result,
     changedFiles: pr.files.map((f) => f.filename),
     limitations,

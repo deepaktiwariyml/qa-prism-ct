@@ -248,6 +248,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       prNumber: result.prNumber,
       repo: value,
       title: result.title,
+      tickets: result.tickets,
       analysis,
       changedFiles: result.changedFiles,
       limitations: result.limitations,
