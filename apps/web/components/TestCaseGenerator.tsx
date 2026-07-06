@@ -76,6 +76,41 @@ export function TestCaseGenerator() {
   const [usage, setUsage] = useState<CallUsage | null>(null);
   const [colMenuOpen, setColMenuOpen] = useState(false);
   const colMenuRef = useRef<HTMLDivElement>(null);
+  // Per-column pixel widths (drag-to-resize). Keyed by 'text' for the Test
+  // Case column and by column id for each added column.
+  const [colWidths, setColWidths] = usePersistentState<Record<string, number>>(
+    'qa-prism:tc:colWidths',
+    {},
+  );
+  const widthOf = (key: string, fallback: number) => colWidths[key] ?? fallback;
+
+  /** Start a horizontal column-resize drag from a header handle. */
+  function startResize(e: React.PointerEvent, key: string, fallback: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widthOf(key, fallback);
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.max(90, startW + (ev.clientX - startX));
+      setColWidths((w) => ({ ...w, [key]: next }));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  const TEXT_COL_DEFAULT = 380;
+  const CUSTOM_COL_DEFAULT = 190;
+  const tableWidth =
+    36 + 44 + widthOf('text', TEXT_COL_DEFAULT) + 150 +
+    columns.reduce((sum, c) => sum + widthOf(c.id, CUSTOM_COL_DEFAULT), 0);
 
   // Close the download dropdown when clicking outside it.
   useEffect(() => {
@@ -561,29 +596,45 @@ export function TestCaseGenerator() {
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-            <table className="w-full min-w-[760px] border-collapse text-sm">
+            <table
+              className="table-fixed border-collapse text-sm"
+              style={{ width: tableWidth, minWidth: '100%' }}
+            >
+              <colgroup>
+                <col style={{ width: 36 }} />
+                <col style={{ width: 44 }} />
+                <col style={{ width: widthOf('text', TEXT_COL_DEFAULT) }} />
+                {columns.map((c) => (
+                  <col key={c.id} style={{ width: widthOf(c.id, CUSTOM_COL_DEFAULT) }} />
+                ))}
+                <col style={{ width: 150 }} />
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="w-9 px-3 py-2.5" />
-                  <th className="w-10 px-3 py-2.5">#</th>
-                  <th className="px-3 py-2.5">Test case</th>
+                  <th className="px-3 py-2.5" />
+                  <th className="px-3 py-2.5">#</th>
+                  <th className="relative px-3 py-2.5">
+                    Test case
+                    <ResizeHandle onPointerDown={(e) => startResize(e, 'text', TEXT_COL_DEFAULT)} />
+                  </th>
                   {columns.map((c) => (
-                    <th key={c.id} className="px-3 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th key={c.id} className="relative px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 pr-2">
+                        <span className="truncate text-xs font-semibold uppercase tracking-wide text-slate-600">
                           {c.name}
                         </span>
                         <button
                           onClick={() => removeColumn(c.id)}
                           title="Remove column"
-                          className="text-slate-300 hover:text-red-500"
+                          className="shrink-0 text-slate-300 hover:text-red-500"
                         >
                           ✕
                         </button>
                       </div>
+                      <ResizeHandle onPointerDown={(e) => startResize(e, c.id, CUSTOM_COL_DEFAULT)} />
                     </th>
                   ))}
-                  <th className="w-40 px-3 py-2.5 text-center">Decision</th>
+                  <th className="px-3 py-2.5 text-center">Decision</th>
                 </tr>
               </thead>
               <tbody>
@@ -723,6 +774,21 @@ export function TestCaseGenerator() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Drag handle on a column's right edge to resize it. */
+function ResizeHandle({ onPointerDown }: { onPointerDown: (e: React.PointerEvent) => void }) {
+  return (
+    <span
+      onPointerDown={onPointerDown}
+      role="separator"
+      aria-orientation="vertical"
+      title="Drag to resize column"
+      className="absolute right-0 top-0 z-10 flex h-full w-2 cursor-col-resize touch-none items-center justify-center hover:bg-indigo-200/60"
+    >
+      <span className="h-1/2 w-px bg-slate-300" />
+    </span>
   );
 }
 
