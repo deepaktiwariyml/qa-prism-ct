@@ -32,6 +32,14 @@ const FillColumnsBody = z.object({
   columns: z.array(z.string().min(1)).min(1).max(12),
 });
 
+const CombineBody = z.object({
+  testcases: z.array(z.string().min(1)).min(2).max(25),
+});
+
+const ExplainBody = z.object({
+  testcase: z.string().min(1).max(2000),
+});
+
 // Cheaper model for low-stakes generation (word game, column auto-fill). The
 // quality-critical calls (impact analysis, test-case generation, login field
 // detection) use the default ANTHROPIC_MODEL (Sonnet).
@@ -322,6 +330,47 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         return columns.map((__, j) => String(row[j] ?? ''));
       });
       return { rows };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Merge several selected test cases into a single coherent one-line case.
+  app.post('/testcases/combine', async (req, reply) => {
+    const parsed = CombineBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({
+        title: z.string().min(1),
+        type: z.enum(['positive', 'negative', 'edge']),
+      });
+      const result = await llm.completeJSON({
+        system:
+          'You are a senior QA engineer. Merge the given manual test cases into ONE coherent, concise one-line test case that preserves their combined intent and important checks. Imperative, no numbering. Classify it as positive, negative, or edge.',
+        prompt: `Combine these test cases into one:\n${parsed.data.testcases.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn JSON: {"title":"...","type":"positive|negative|edge"}.`,
+        schema,
+      });
+      return { title: result.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: result.type };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Explain a single test case: what it verifies, preconditions, steps, expected result.
+  app.post('/testcases/explain', async (req, reply) => {
+    const parsed = ExplainBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ explanation: z.string().min(1) });
+      const result = await llm.completeJSON({
+        system:
+          'You are a senior QA engineer. Given a one-line manual test case, explain it clearly and practically for a tester: what it verifies, any preconditions, the steps to execute, and the expected result. Keep it concise and well-structured (a short paragraph or a few labelled lines). Return plain text in "explanation".',
+        prompt: `Explain this test case:\n"${parsed.data.testcase}"\n\nReturn JSON: {"explanation":"..."}.`,
+        schema,
+      });
+      return { explanation: result.explanation };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }

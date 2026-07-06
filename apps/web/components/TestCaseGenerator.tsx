@@ -45,6 +45,15 @@ export function TestCaseGenerator() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [openMenu, setOpenMenu] = useState<'xlsx' | 'pdf' | null>(null);
   const downloadsRef = useRef<HTMLDivElement>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [combining, setCombining] = useState(false);
+  const [explain, setExplain] = useState<{
+    rowId: string;
+    loading: boolean;
+    content: string;
+    error: string | null;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Close the download dropdown when clicking outside it.
   useEffect(() => {
@@ -93,6 +102,7 @@ export function TestCaseGenerator() {
         })),
       );
       setTypeFilter('all');
+      setSelected(new Set());
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -162,6 +172,114 @@ export function TestCaseGenerator() {
   }
   function setText(rowId: string, text: string) {
     setRows((rs) => rs.map((r) => (r.id === rowId ? { ...r, text } : r)));
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Merge the selected test cases into one via the LLM. Unselected rows are
+   * left untouched; the combined case replaces the selected ones in place. */
+  async function combineSelected() {
+    const chosen = rows.filter((r) => selected.has(r.id));
+    if (chosen.length < 2) return;
+    setCombining(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/testcases/combine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testcases: chosen.map((r) => r.text) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      const combined: Row = {
+        id: uid(),
+        text: String(data.title ?? '').trim(),
+        type: (['positive', 'negative', 'edge'] as CaseType[]).includes(data.type)
+          ? data.type
+          : 'positive',
+        status: 'pending',
+        values: {},
+      };
+      setRows((rs) => {
+        const out: Row[] = [];
+        let inserted = false;
+        for (const r of rs) {
+          if (selected.has(r.id)) {
+            if (!inserted) {
+              out.push(combined); // drop the selected in place, insert the merged one once
+              inserted = true;
+            }
+          } else {
+            out.push(r);
+          }
+        }
+        return out;
+      });
+      setSelected(new Set());
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setCombining(false);
+    }
+  }
+
+  async function openExplain(row: Row) {
+    setExplain({ rowId: row.id, loading: true, content: '', error: null });
+    setCopied(false);
+    try {
+      const res = await fetch('/api/testcases/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testcase: row.text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      setExplain({ rowId: row.id, loading: false, content: String(data.explanation ?? ''), error: null });
+    } catch (err) {
+      setExplain({ rowId: row.id, loading: false, content: '', error: String(err instanceof Error ? err.message : err) });
+    }
+  }
+
+  async function copyExplanation() {
+    const text = explain?.content;
+    if (!text) return;
+    let ok = false;
+    // Preferred path — needs a secure context and clipboard-write permission.
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {
+      // fall through to the legacy path
+    }
+    // Fallback for insecure contexts / permission-restricted iframes.
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
   }
 
   /** Export matrix — classification (type) is UI-only and intentionally excluded. */
@@ -294,6 +412,15 @@ export function TestCaseGenerator() {
           </div>
 
           <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+            {selected.size >= 2 && (
+              <button
+                onClick={combineSelected}
+                disabled={combining}
+                className="mr-auto rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              >
+                {combining ? 'Combining…' : `⧉ Combine ${selected.size} test cases`}
+              </button>
+            )}
             <button
               onClick={addColumn}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -335,6 +462,7 @@ export function TestCaseGenerator() {
             <table className="w-full min-w-[760px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-9 px-3 py-2.5" />
                   <th className="w-10 px-3 py-2.5">#</th>
                   <th className="px-3 py-2.5">Test case</th>
                   {columns.map((c) => (
@@ -360,7 +488,16 @@ export function TestCaseGenerator() {
               </thead>
               <tbody>
                 {visibleRows.map(({ r, i }) => (
-                  <tr key={r.id} className={`border-b border-slate-100 align-top ${rowTone[r.status]}`}>
+                  <tr key={r.id} className={`group border-b border-slate-100 align-top ${rowTone[r.status]}`}>
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(r.id)}
+                        onChange={() => toggleSelect(r.id)}
+                        aria-label="Select test case for combining"
+                        className="mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                      />
+                    </td>
                     <td className="px-3 py-3 text-slate-400">{i + 1}</td>
                     <td className="px-3 py-2">
                       <span
@@ -368,13 +505,21 @@ export function TestCaseGenerator() {
                       >
                         {TYPE_LABEL[r.type]}
                       </span>
-                      <textarea
-                        value={r.text}
-                        onChange={(e) => setText(r.id, e.target.value)}
-                        rows={2}
-                        aria-label="Test case (editable)"
-                        className="w-full resize-y rounded border border-transparent bg-transparent px-2 py-1 text-sm text-slate-800 hover:border-slate-200 focus:border-indigo-400 focus:bg-white focus:outline-none"
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={r.text}
+                          onChange={(e) => setText(r.id, e.target.value)}
+                          rows={2}
+                          aria-label="Test case (editable)"
+                          className="w-full resize-y rounded border border-transparent bg-transparent px-2 py-1 pr-24 text-sm text-slate-800 hover:border-slate-200 focus:border-indigo-400 focus:bg-white focus:outline-none"
+                        />
+                        <button
+                          onClick={() => openExplain(r)}
+                          className="absolute right-1.5 top-1.5 rounded-md border border-indigo-300 bg-white/90 px-2 py-0.5 text-xs font-medium text-indigo-700 opacity-0 shadow-sm transition hover:bg-indigo-50 focus:opacity-100 group-hover:opacity-100"
+                        >
+                          💡 Explain
+                        </button>
+                      </div>
                     </td>
                     {columns.map((c) => (
                       <td key={c.id} className="px-3 py-2">
@@ -419,6 +564,61 @@ export function TestCaseGenerator() {
             Positive / Negative / Edge tags are shown here to help you review — they’re not included
             in the export.
           </p>
+        </div>
+      )}
+
+      {explain && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setExplain(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Test case explanation"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <h3 className="text-sm font-semibold text-slate-800">💡 Explanation</h3>
+              <button
+                onClick={() => setExplain(null)}
+                aria-label="Close"
+                className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="min-h-[80px] flex-1 overflow-y-auto px-5 py-4">
+              {explain.loading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-indigo-600" />
+                  Explaining this test case…
+                </div>
+              ) : explain.error ? (
+                <p className="text-sm text-red-600">{explain.error}</p>
+              ) : (
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                  {explain.content}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+              <button
+                onClick={() => setExplain(null)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={copyExplanation}
+                disabled={explain.loading || !!explain.error}
+                className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              >
+                {copied ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
