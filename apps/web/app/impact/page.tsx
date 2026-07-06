@@ -9,7 +9,7 @@ export default function ImpactPage() {
     <div className="mx-auto max-w-4xl px-6 py-12">
       <p className="text-sm font-medium text-indigo-600">PR impact analyser</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-        Paste a pull request, get a manual tester’s checklist
+        Paste a pull request, get a testing checklist
       </h1>
       <p className="mt-3 max-w-2xl text-slate-600">{mod.what}</p>
 
