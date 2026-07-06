@@ -5,8 +5,12 @@ import {
   fmtTokens,
   fmtUsd,
   operationLabel,
+  type UsageDay,
   type UsageResponse,
 } from '@/lib/usage';
+
+const PAGE_DAYS = 10;
+type Totals = UsageResponse['totals'];
 
 const TIPS = [
   'Right-size the model: draft/low-stakes calls (column fill, word lists) use the cheaper Haiku model; keep the pricier Sonnet for quality-critical work like impact analysis.',
@@ -18,21 +22,31 @@ const TIPS = [
 ];
 
 export function ConsumptionDetails() {
-  const [data, setData] = useState<UsageResponse | null>(null);
+  const [days, setDays] = useState<UsageDay[]>([]);
+  const [totals, setTotals] = useState<Totals | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [openDay, setOpenDay] = useState<string | null>(null);
 
+  async function fetchPage(offset: number): Promise<UsageResponse> {
+    const res = await fetch(`/api/usage?offset=${offset}&limit=${PAGE_DAYS}`, { cache: 'no-store' });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? `API ${res.status}`);
+    return json as UsageResponse;
+  }
+
+  // Initial load / refresh — resets to the first page.
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/usage', { cache: 'no-store' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `API ${res.status}`);
-      setData(json as UsageResponse);
-      // Open today's (most recent) day by default.
-      setOpenDay((json as UsageResponse).days[0]?.date ?? null);
+      const page = await fetchPage(0);
+      setDays(page.days);
+      setTotals(page.totals);
+      setHasMore(page.hasMore);
+      setOpenDay(page.days[0]?.date ?? null); // open the most recent day
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -40,11 +54,24 @@ export function ConsumptionDetails() {
     }
   }
 
+  async function loadMore() {
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const page = await fetchPage(days.length);
+      setDays((prev) => [...prev, ...page.days]);
+      setHasMore(page.hasMore);
+      setTotals(page.totals); // all-time totals; refresh in case new calls landed
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, []);
-
-  const totals = data?.totals;
 
   return (
     <div>
@@ -65,8 +92,8 @@ export function ConsumptionDetails() {
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {loading && !data && <p className="text-sm text-slate-500">Loading consumption…</p>}
-      {data && data.days.length === 0 && (
+      {loading && <p className="text-sm text-slate-500">Loading consumption…</p>}
+      {!loading && days.length === 0 && (
         <p className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
           No AI usage recorded yet. Generate some test cases or analyse a PR, then come back.
         </p>
@@ -74,7 +101,7 @@ export function ConsumptionDetails() {
 
       {/* Datewise consumption */}
       <div className="flex flex-col gap-3">
-        {data?.days.map((d) => {
+        {days.map((d) => {
           const open = openDay === d.date;
           return (
             <div key={d.date} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -134,6 +161,18 @@ export function ConsumptionDetails() {
           );
         })}
       </div>
+
+      {hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading…' : `Load more (next ${PAGE_DAYS} days)`}
+          </button>
+        </div>
+      )}
 
       {/* Cost-saving tips */}
       <section className="mt-10">

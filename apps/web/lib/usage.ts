@@ -24,6 +24,7 @@ export interface UsageDay {
 }
 export interface UsageResponse {
   days: UsageDay[];
+  hasMore: boolean;
   totals: { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
 }
 

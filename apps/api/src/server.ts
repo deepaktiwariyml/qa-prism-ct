@@ -123,26 +123,23 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   // attempt of a retry is billed and recorded too. Upsert increments the
   // per-(day, model, operation) row. Never throws back into the LLM call.
   setUsageRecorder(async (u: TokenUsage) => {
-    const day = new Date();
-    day.setUTCHours(0, 0, 0, 0);
-    await prisma.llmUsageDaily.upsert({
-      where: { day_model_operation: { day, model: u.model, operation: u.operation } },
-      create: {
-        day,
-        model: u.model,
-        operation: u.operation,
-        calls: 1,
-        inputTokens: u.inputTokens,
-        outputTokens: u.outputTokens,
-        costUsd: u.costUsd,
-      },
-      update: {
-        calls: { increment: 1 },
-        inputTokens: { increment: u.inputTokens },
-        outputTokens: { increment: u.outputTokens },
-        costUsd: { increment: u.costUsd },
-      },
-    });
+    const day = new Date().toISOString().slice(0, 10); // UTC yyyy-mm-dd
+    // Atomic upsert-increment via native INSERT ... ON CONFLICT. Postgres
+    // serialises concurrent writers on the row (and on the first-insert
+    // conflict), so simultaneous calls from many users can never lose an
+    // update or throw a unique-violation — the counts stay exact.
+    await prisma.$executeRaw`
+      INSERT INTO "LlmUsageDaily"
+        ("id", "day", "model", "operation", "calls", "inputTokens", "outputTokens", "costUsd", "updatedAt")
+      VALUES
+        (gen_random_uuid()::text, ${day}::date, ${u.model}, ${u.operation}, 1, ${u.inputTokens}, ${u.outputTokens}, ${u.costUsd}, now())
+      ON CONFLICT ("day", "model", "operation") DO UPDATE SET
+        "calls" = "LlmUsageDaily"."calls" + 1,
+        "inputTokens" = "LlmUsageDaily"."inputTokens" + EXCLUDED."inputTokens",
+        "outputTokens" = "LlmUsageDaily"."outputTokens" + EXCLUDED."outputTokens",
+        "costUsd" = "LlmUsageDaily"."costUsd" + EXCLUDED."costUsd",
+        "updatedAt" = now()
+    `;
   });
 
   // Allow the dashboard (and other local clients) to call the API from a browser.
@@ -427,13 +424,33 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     }
   });
 
-  // LLM token + cost consumption, aggregated per day (spec §7). Each day lists
-  // its per-(model, operation) breakdown plus day totals; `totals` sums all.
-  app.get('/usage', async () => {
-    const rows = await prisma.llmUsageDaily.findMany({
-      orderBy: [{ day: 'desc' }, { costUsd: 'desc' }],
-      take: 2000,
+  // LLM token + cost consumption, aggregated per day (spec §7). Paginated by
+  // day (newest first, `limit` days per page from `offset`); `totals` is
+  // all-time across every day, independent of the page.
+  app.get('/usage', async (req) => {
+    const q = req.query as { limit?: string; offset?: string };
+    const limit = Math.min(Math.max(Number(q.limit) || 10, 1), 60);
+    const offset = Math.max(Number(q.offset) || 0, 0);
+
+    // Page of distinct days, newest first (fetch one extra to detect hasMore).
+    const dayRows = await prisma.$queryRaw<Array<{ day: Date }>>`
+      SELECT DISTINCT "day" FROM "LlmUsageDaily" ORDER BY "day" DESC LIMIT ${limit + 1} OFFSET ${offset}
+    `;
+    const hasMore = dayRows.length > limit;
+    const pageDays = dayRows.slice(0, limit).map((r) => r.day);
+
+    const rows = pageDays.length
+      ? await prisma.llmUsageDaily.findMany({
+          where: { day: { in: pageDays } },
+          orderBy: [{ day: 'desc' }, { costUsd: 'desc' }],
+        })
+      : [];
+
+    // All-time totals — the top-line numbers reflect everything, not the page.
+    const agg = await prisma.llmUsageDaily.aggregate({
+      _sum: { calls: true, inputTokens: true, outputTokens: true, costUsd: true },
     });
+
     const byDay = new Map<
       string,
       {
@@ -452,7 +469,6 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         }>;
       }
     >();
-    const totals = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
     for (const r of rows) {
       const date = r.day.toISOString().slice(0, 10);
@@ -474,10 +490,6 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         outputTokens: r.outputTokens,
         costUsd: cost,
       });
-      totals.calls += r.calls;
-      totals.inputTokens += r.inputTokens;
-      totals.outputTokens += r.outputTokens;
-      totals.costUsd += cost;
     }
 
     // Round money to cents-ish for stable display (keep 4 dp for tiny costs).
@@ -487,7 +499,13 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       costUsd: round(d.costUsd),
       breakdown: d.breakdown.map((b) => ({ ...b, costUsd: round(b.costUsd) })),
     }));
-    return { days, totals: { ...totals, costUsd: round(totals.costUsd) } };
+    const totals = {
+      calls: agg._sum.calls ?? 0,
+      inputTokens: agg._sum.inputTokens ?? 0,
+      outputTokens: agg._sum.outputTokens ?? 0,
+      costUsd: round(Number(agg._sum.costUsd ?? 0)),
+    };
+    return { days, hasMore, totals };
   });
 
   // Poll a scan: status, findings, and score once computed. The screenshot/
