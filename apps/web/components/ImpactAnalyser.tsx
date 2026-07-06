@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import type { Severity } from '@qa-prism/core';
 import { SEVERITY_BADGE } from '@/lib/ui';
 import { usePersistentState } from '@/lib/usePersistentState';
@@ -9,53 +8,60 @@ import { usePersistentState } from '@/lib/usePersistentState';
 interface ImpactArea {
   name: string;
   riskLevel: Severity;
-  reason: string;
-  suggestedTests: string[];
-  relatedFiles: string[];
+  impact: string;
+  impactedFiles: string[];
+  userFlows: string[];
   relatedFindingIds: string[];
+}
+interface ChecklistItem {
+  area: string;
+  priority: Severity;
+  what: string;
+  risk: string;
+}
+interface ImpactAnalysis {
+  whatsChanged: { summary: string };
+  whatsImpacted: { summary: string; areas: ImpactArea[] };
+  testingChecklist: ChecklistItem[];
+}
+interface TicketRef {
+  key: string;
+  url: string;
+  source: 'jira' | 'linear' | 'other';
 }
 interface ImpactResponse {
   prNumber: number;
+  prUrl?: string;
   repo: string;
   title: string;
-  areas: ImpactArea[];
+  tickets?: TicketRef[];
+  analysis: ImpactAnalysis;
+  changedFiles: string[];
   limitations: string[];
-}
-interface TestCase {
-  id: string;
-  area: string;
-  priority: Severity;
-  test: string;
-  relatedFiles: string;
 }
 
 const RISK_ORDER: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 
-/** Flatten areas into numbered, prioritized test cases. */
-function toTestCases(areas: ImpactArea[]): TestCase[] {
-  const sorted = [...areas].sort((a, b) => RISK_ORDER[b.riskLevel] - RISK_ORDER[a.riskLevel]);
-  const out: TestCase[] = [];
-  let n = 1;
-  for (const area of sorted) {
-    for (const test of area.suggestedTests) {
-      out.push({
-        id: `TC-${String(n).padStart(2, '0')}`,
-        area: area.name,
-        priority: area.riskLevel,
-        test,
-        relatedFiles: area.relatedFiles.join('; '),
-      });
-      n += 1;
-    }
-  }
-  return out;
+function toCsv(rows: ChecklistItem[]): string {
+  const q = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
+  const header = ['#', 'Area', 'Priority', 'What to test', 'Risk'].map(q).join(',');
+  const lines = rows.map((r, i) =>
+    [String(i + 1), r.area, r.priority, r.what, r.risk].map(q).join(','),
+  );
+  return [header, ...lines].join('\r\n');
 }
 
-function toCsv(rows: TestCase[]): string {
-  const q = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
-  const header = ['ID', 'Area', 'Priority', 'Test case', 'Related files'].map(q).join(',');
-  const lines = rows.map((r) => [r.id, r.area, r.priority, r.test, r.relatedFiles].map(q).join(','));
-  return [header, ...lines].join('\r\n');
+/** Numbered section heading — matches the "How it works" step style. */
+function SectionHeading({ n, title, hint }: { n: number; title: string; hint?: string }) {
+  return (
+    <div className="mb-3 flex items-center gap-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-sm font-semibold text-white">
+        {n}
+      </span>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      {hint && <span className="text-xs text-slate-400">{hint}</span>}
+    </div>
+  );
 }
 
 export function ImpactAnalyser() {
@@ -93,17 +99,23 @@ export function ImpactAnalyser() {
   }
 
   const areas = result
-    ? [...result.areas].sort((a, b) => RISK_ORDER[b.riskLevel] - RISK_ORDER[a.riskLevel])
+    ? [...result.analysis.whatsImpacted.areas].sort(
+        (a, b) => RISK_ORDER[b.riskLevel] - RISK_ORDER[a.riskLevel],
+      )
     : [];
-  const testCases = result ? toTestCases(result.areas) : [];
+  const checklist = result
+    ? [...result.analysis.testingChecklist].sort(
+        (a, b) => RISK_ORDER[b.priority] - RISK_ORDER[a.priority],
+      )
+    : [];
 
   function downloadCsv() {
     if (!result) return;
-    const blob = new Blob([toCsv(testCases)], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([toCsv(checklist)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `impact-${result.repo.replace(/\W+/g, '-')}-pr${result.prNumber}-testcases.csv`;
+    a.download = `impact-${result.repo.replace(/\W+/g, '-')}-pr${result.prNumber}-checklist.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -152,28 +164,98 @@ export function ImpactAnalyser() {
       </form>
 
       {busy && (
-        <p className="mt-6 text-sm text-slate-500">
-          Fetching the diff and asking Claude to reason about impact — this can take a moment…
-        </p>
+        <div className="mt-8">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-5">
+            <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Analysing the pull request…</p>
+              <p className="text-xs text-slate-500">
+                Fetching the diff and asking Claude to reason about impact — this can take a moment.
+              </p>
+            </div>
+          </div>
+          {/* Skeleton of the three sections while we wait. */}
+          <div className="mt-4 space-y-4" aria-hidden="true">
+            {[0, 1, 2].map((s) => (
+              <div key={s} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="mb-3 h-4 w-40 animate-pulse rounded bg-slate-200" />
+                <div className="space-y-2">
+                  <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+                  <div className="h-3 w-11/12 animate-pulse rounded bg-slate-100" />
+                  <div className="h-3 w-3/4 animate-pulse rounded bg-slate-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {result && (
         <div className="mt-8">
           {/* Summary + actions */}
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5">
             <div className="min-w-0">
               <div className="text-xs font-medium uppercase tracking-wide text-violet-600">
-                Test plan
+                Impact analysis
               </div>
-              <h2 className="mt-1 truncate text-lg font-semibold">{result.title}</h2>
+              <h2 className="mt-1 truncate text-lg font-semibold">
+                {result.prUrl ? (
+                  <a
+                    href={result.prUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-slate-900 hover:text-indigo-600 hover:underline"
+                  >
+                    {result.title}
+                  </a>
+                ) : (
+                  result.title
+                )}
+              </h2>
               <p className="text-sm text-slate-500">
-                {result.repo} · PR #{result.prNumber}
+                {result.prUrl ? (
+                  <a
+                    href={result.prUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-indigo-600 hover:underline"
+                  >
+                    {result.repo} · PR #{result.prNumber}
+                  </a>
+                ) : (
+                  <>
+                    {result.repo} · PR #{result.prNumber}
+                  </>
+                )}
               </p>
+              {result.tickets && result.tickets.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {result.tickets.map((t) => (
+                    <a
+                      key={t.key}
+                      href={t.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" aria-hidden="true">
+                        <path d="M9 17H7A5 5 0 0 1 7 7h2m6 0h2a5 5 0 0 1 0 10h-2m-7-5h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      {t.key}
+                    </a>
+                  ))}
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
-                  {testCases.length} test case{testCases.length === 1 ? '' : 's'}
+                  {result.changedFiles.length} file{result.changedFiles.length === 1 ? '' : 's'} changed
                 </span>
-                <span>across {areas.length} area{areas.length === 1 ? '' : 's'}</span>
+                <span>
+                  {areas.length} impacted area{areas.length === 1 ? '' : 's'}
+                </span>
+                <span>
+                  {checklist.length} check{checklist.length === 1 ? '' : 's'}
+                </span>
                 {(['critical', 'high', 'medium', 'low', 'info'] as Severity[])
                   .filter((s) => riskCounts[s])
                   .map((s) => (
@@ -191,23 +273,47 @@ export function ImpactAnalyser() {
                 <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
                   <path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Download test cases
+                Download checklist
               </button>
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Go to scan list →
-              </Link>
             </div>
           </div>
 
-          {/* Areas as test-case groups */}
-          <ul className="flex flex-col gap-3">
-            {areas.map((area, i) => {
-              // Compute the running TC numbers for this area to keep ids stable.
-              const before = areas.slice(0, i).reduce((n, a) => n + a.suggestedTests.length, 0);
-              return (
+          {/* 1 · What's Changed */}
+          <section className="mb-8">
+            <SectionHeading n={1} title="What's Changed" hint="from a QA's perspective" />
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                {result.analysis.whatsChanged.summary}
+              </p>
+              {result.changedFiles.length > 0 && (
+                <div className="mt-4">
+                  <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Changed files ({result.changedFiles.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {result.changedFiles.map((f) => (
+                      <span key={f} className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 2 · What's Impacted */}
+          <section className="mb-8">
+            <SectionHeading n={2} title="What's Impacted" hint="blast radius & user flows" />
+            {result.analysis.whatsImpacted.summary && (
+              <div className="mb-3 rounded-2xl border border-violet-100 bg-violet-50/50 p-5">
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                  {result.analysis.whatsImpacted.summary}
+                </p>
+              </div>
+            )}
+            <ul className="flex flex-col gap-3">
+              {areas.map((area, i) => (
                 <li key={i} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                   <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-3">
                     <span className={`rounded px-2 py-0.5 text-xs font-semibold ${SEVERITY_BADGE[area.riskLevel]}`}>
@@ -216,41 +322,83 @@ export function ImpactAnalyser() {
                     <h3 className="font-medium">{area.name}</h3>
                     {area.relatedFindingIds.length > 0 && (
                       <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800">
-                        {area.relatedFindingIds.length} related finding(s)
+                        {area.relatedFindingIds.length} related finding
+                        {area.relatedFindingIds.length === 1 ? '' : 's'}
                       </span>
                     )}
                   </div>
                   <div className="px-5 py-4">
-                    <p className="text-sm text-slate-600">{area.reason}</p>
-                    {area.suggestedTests.length > 0 && (
-                      <ul className="mt-3 flex flex-col gap-2">
-                        {area.suggestedTests.map((t, j) => (
-                          <li key={j} className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                            <span className="mt-0.5 font-mono text-xs font-semibold text-violet-600">
-                              TC-{String(before + j + 1).padStart(2, '0')}
-                            </span>
-                            <span className="text-sm text-slate-700">{t}</span>
-                          </li>
-                        ))}
-                      </ul>
+                    <p className="text-sm text-slate-600">{area.impact}</p>
+                    {area.userFlows.length > 0 && (
+                      <div className="mt-3">
+                        <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                          User flows
+                        </div>
+                        <ul className="flex flex-col gap-1.5">
+                          {area.userFlows.map((flow, j) => (
+                            <li key={j} className="flex items-start gap-2 text-sm text-slate-700">
+                              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
+                              {flow}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
-                    {area.relatedFiles.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {area.relatedFiles.map((f) => (
-                          <span key={f} className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">
-                            {f}
-                          </span>
-                        ))}
+                    {area.impactedFiles.length > 0 && (
+                      <div className="mt-3">
+                        <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Impacted files
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {area.impactedFiles.map((f) => (
+                            <span key={f} className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-600">
+                              {f}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          </section>
+
+          {/* 3 · Testing checklist */}
+          <section>
+            <SectionHeading n={3} title="Testing checklist" hint="what to test, ranked by risk" />
+            <ul className="flex flex-col gap-2">
+              {checklist.map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4"
+                >
+                  <span className="mt-0.5 font-mono text-xs font-semibold text-violet-600">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${SEVERITY_BADGE[item.priority]}`}>
+                        {item.priority}
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {item.area}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-sm text-slate-800">{item.what}</p>
+                    {item.risk && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        <span className="font-medium text-slate-600">Risk:</span> {item.risk}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           {result.limitations.length > 0 && (
-            <p className="mt-4 text-xs text-slate-500">{result.limitations.join(' ')}</p>
+            <p className="mt-6 text-xs text-slate-500">{result.limitations.join(' ')}</p>
           )}
         </div>
       )}

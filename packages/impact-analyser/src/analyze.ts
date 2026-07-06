@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SeveritySchema, type ImpactArea } from '@qa-prism/core';
+import { SeveritySchema } from '@qa-prism/core';
 import {
   buildImpactAnalysisPrompt,
   createLlmClient,
@@ -8,6 +8,7 @@ import {
 } from '@qa-prism/llm';
 import { fetchPr, type ChangedFile, type FetchImpl } from './github.js';
 import { parseGitHubPrUrl } from './parse-url.js';
+import { extractTickets, mergeTickets, type TicketRef } from './tickets.js';
 
 /**
  * Max total patch characters sent to the LLM (bounded context — spec §7).
@@ -16,14 +17,30 @@ import { parseGitHubPrUrl } from './parse-url.js';
  */
 const MAX_PATCH_CHARS = Number(process.env.IMPACT_MAX_PATCH_CHARS) || 200_000;
 
+// LLM output shape — the standardised three-section report, minus
+// relatedFindingIds (which the API cross-links in afterwards).
 const AnalysisSchema = z.object({
-  areas: z.array(
+  whatsChanged: z.object({
+    summary: z.string(),
+  }),
+  whatsImpacted: z.object({
+    summary: z.string(),
+    areas: z.array(
+      z.object({
+        name: z.string(),
+        riskLevel: SeveritySchema,
+        impact: z.string(),
+        impactedFiles: z.array(z.string()),
+        userFlows: z.array(z.string()),
+      }),
+    ),
+  }),
+  testingChecklist: z.array(
     z.object({
-      name: z.string(),
-      riskLevel: SeveritySchema,
-      reason: z.string(),
-      suggestedTests: z.array(z.string()),
-      relatedFiles: z.array(z.string()),
+      area: z.string(),
+      priority: SeveritySchema,
+      what: z.string(),
+      risk: z.string(),
     }),
   ),
 });
@@ -38,12 +55,16 @@ export interface AnalyzeDeps {
   fetchImpl?: FetchImpl;
 }
 
+/** The LLM analysis before the API cross-links related findings. */
+export type RawImpactAnalysis = z.infer<typeof AnalysisSchema>;
+
 export interface ImpactResult {
   owner: string;
   repo: string;
   prNumber: number;
   title: string;
-  areas: Array<Omit<ImpactArea, 'relatedFindingIds'>>;
+  tickets: TicketRef[];
+  analysis: RawImpactAnalysis;
   changedFiles: string[];
   limitations: string[];
 }
@@ -113,12 +134,21 @@ export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Pr
     schema: AnalysisSchema,
   });
 
+  // Ticket keys can live in the title, description, branch name, or commit
+  // messages; linked GitHub issues come from the "Development" panel.
+  const ticketText = [pr.title, pr.body, pr.branch, ...pr.commitMessages].join('\n');
+  const tickets = mergeTickets(
+    extractTickets(ticketText, { jiraBaseUrl: process.env.JIRA_BASE_URL }),
+    pr.linkedIssues.map((li) => ({ key: li.key, url: li.url, source: 'other' as const })),
+  );
+
   return {
     owner: ref.owner,
     repo: ref.repo,
     prNumber: ref.number,
     title: pr.title,
-    areas: result.areas,
+    tickets,
+    analysis: result,
     changedFiles: pr.files.map((f) => f.filename),
     limitations,
   };

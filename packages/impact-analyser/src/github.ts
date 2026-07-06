@@ -5,9 +5,17 @@ export interface ChangedFile {
   status: string;
   patch?: string;
 }
+export interface LinkedIssue {
+  key: string; // e.g. "#123"
+  url: string;
+  title: string;
+}
 export interface PrData {
   title: string;
   body: string;
+  branch: string; // head ref, e.g. "feature/SHOP-123-add-coupons"
+  commitMessages: string[];
+  linkedIssues: LinkedIssue[];
   files: ChangedFile[];
 }
 
@@ -41,7 +49,11 @@ export async function fetchPr(
   if (!prRes.ok) {
     throw new Error(await ghError(prRes, 'pull request'));
   }
-  const pr = (await prRes.json()) as { title?: string; body?: string };
+  const pr = (await prRes.json()) as {
+    title?: string;
+    body?: string;
+    head?: { ref?: string };
+  };
 
   const filesRes = await fetchImpl(`${base}/files?per_page=100`, { headers: headers(token) });
   if (!filesRes.ok) {
@@ -49,11 +61,74 @@ export async function fetchPr(
   }
   const files = (await filesRes.json()) as ChangedFile[];
 
+  // Commit messages and linked issues are best-effort — they enrich ticket
+  // detection but must never fail the analysis.
+  const commitMessages = await fetchCommitMessages(base, token, fetchImpl);
+  const linkedIssues = token ? await fetchLinkedIssues(ref, token, fetchImpl) : [];
+
   return {
     title: pr.title ?? '',
     body: pr.body ?? '',
+    branch: pr.head?.ref ?? '',
+    commitMessages,
+    linkedIssues,
     files: files.map((f) => ({ filename: f.filename, status: f.status, patch: f.patch })),
   };
+}
+
+/** Commit messages on the PR — a common home for ticket keys. Best-effort. */
+async function fetchCommitMessages(
+  base: string,
+  token: string | undefined,
+  fetchImpl: FetchImpl,
+): Promise<string[]> {
+  try {
+    const res = await fetchImpl(`${base}/commits?per_page=100`, { headers: headers(token) });
+    if (!res.ok) return [];
+    const commits = (await res.json()) as Array<{ commit?: { message?: string } }>;
+    return commits.map((c) => c.commit?.message ?? '').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Issues linked to the PR via GitHub's "Development" panel (closing
+ * references). GraphQL requires auth, so this only runs with a token.
+ * Best-effort — returns [] on any failure.
+ */
+async function fetchLinkedIssues(
+  ref: PrRef,
+  token: string,
+  fetchImpl: FetchImpl,
+): Promise<LinkedIssue[]> {
+  try {
+    const query =
+      'query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){closingIssuesReferences(first:20){nodes{number url title}}}}}';
+    const res = await fetchImpl(`${GH_API}/graphql`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'User-Agent': 'qa-prism',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables: { o: ref.owner, r: ref.repo, n: ref.number } }),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      data?: {
+        repository?: {
+          pullRequest?: {
+            closingIssuesReferences?: { nodes?: Array<{ number: number; url: string; title?: string }> };
+          };
+        };
+      };
+    };
+    const nodes = data.data?.repository?.pullRequest?.closingIssuesReferences?.nodes ?? [];
+    return nodes.map((nd) => ({ key: `#${nd.number}`, url: nd.url, title: nd.title ?? '' }));
+  } catch {
+    return [];
+  }
 }
 
 async function ghError(res: Response, what: string): Promise<string> {
