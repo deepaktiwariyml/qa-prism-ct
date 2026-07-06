@@ -5,6 +5,7 @@ import {
   createLlmClient,
   IMPACT_ANALYSIS_SYSTEM,
   type LlmClient,
+  type TokenUsage,
 } from '@qa-prism/llm';
 import { fetchPr, type ChangedFile, type FetchImpl } from './github.js';
 import { parseGitHubPrUrl } from './parse-url.js';
@@ -67,6 +68,7 @@ export interface ImpactResult {
   analysis: RawImpactAnalysis;
   changedFiles: string[];
   limitations: string[];
+  usage?: TokenUsage;
 }
 
 /** Bound the diff we send: keep whole patches until the budget is spent. */
@@ -128,10 +130,13 @@ export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Pr
     truncatedNote: truncated ? 'Some diffs were truncated.' : undefined,
   });
 
+  let usage: TokenUsage | undefined;
   const result = await llm.completeJSON({
     system: IMPACT_ANALYSIS_SYSTEM,
     prompt,
     schema: AnalysisSchema,
+    operation: 'impact.analyze',
+    onUsage: (u) => (usage = u),
   });
 
   // Ticket keys can live in the title, description, branch name, or commit
@@ -151,5 +156,6 @@ export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Pr
     analysis: result,
     changedFiles: pr.files.map((f) => f.filename),
     limitations,
+    usage,
   };
 }

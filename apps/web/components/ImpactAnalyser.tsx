@@ -4,6 +4,8 @@ import { useState } from 'react';
 import type { Severity } from '@qa-prism/core';
 import { SEVERITY_BADGE } from '@/lib/ui';
 import { usePersistentState } from '@/lib/usePersistentState';
+import { UsageChip } from '@/components/UsageChip';
+import type { CallUsage } from '@/lib/usage';
 
 interface ImpactArea {
   name: string;
@@ -38,6 +40,7 @@ interface ImpactResponse {
   analysis: ImpactAnalysis;
   changedFiles: string[];
   limitations: string[];
+  usage?: CallUsage;
 }
 
 const RISK_ORDER: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
@@ -277,6 +280,8 @@ export function ImpactAnalyser() {
               </button>
             </div>
           </div>
+
+          {result.usage && <UsageChip usage={result.usage} className="mb-6" />}
 
           {/* 1 · What's Changed */}
           <section className="mb-8">

@@ -127,6 +127,7 @@ async function llmDetect(page: Page): Promise<LoginRecipe | null> {
   try {
     const llm = createLlmClient();
     const result = await llm.completeJSON({
+      operation: 'scan.login-detect',
       system:
         'You identify the login form fields on a web page. Given a list of input/button elements, return robust CSS selectors for the username field, the password field, and the submit button. Prefer selectors on id or name. Use null if a field is not present on this step.',
       prompt: `Elements on the page:\n${JSON.stringify(fields, null, 2)}`,

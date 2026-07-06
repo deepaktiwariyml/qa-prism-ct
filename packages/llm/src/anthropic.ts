@@ -14,7 +14,7 @@ function getClient(): Anthropic {
 }
 
 /**
- * Real Claude call (spec §7). Returns the concatenated text of the response.
+ * Real Claude call (spec §7). Returns the concatenated text plus token usage.
  * The API key is read from the environment by the SDK and never logged.
  */
 export const anthropicCreateMessage: CreateMessage = async ({ system, prompt, maxTokens, model }) => {
@@ -24,9 +24,16 @@ export const anthropicCreateMessage: CreateMessage = async ({ system, prompt, ma
     system,
     messages: [{ role: 'user', content: prompt }],
   });
-  return response.content
+  const text = response.content
     .filter((block): block is Anthropic.TextBlock => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
     .trim();
+  return {
+    text,
+    usage: {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    },
+  };
 };

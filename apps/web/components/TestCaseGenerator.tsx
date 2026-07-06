@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentState } from '@/lib/usePersistentState';
+import { UsageChip } from '@/components/UsageChip';
+import type { CallUsage } from '@/lib/usage';
 
 type Scope = 'all' | 'approved';
 
@@ -54,6 +56,7 @@ export function TestCaseGenerator() {
     error: string | null;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [usage, setUsage] = useState<CallUsage | null>(null);
 
   // Close the download dropdown when clicking outside it.
   useEffect(() => {
@@ -89,6 +92,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       const cases: Array<{ title: string; type: CaseType }> = Array.isArray(data.testcases)
         ? data.testcases
         : [];
@@ -126,6 +130,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       const matrix: string[][] = Array.isArray(data.rows) ? data.rows : [];
       setRows((rs) =>
         rs.map((r, i) => {
@@ -198,6 +203,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       const combined: Row = {
         id: uid(),
         text: String(data.title ?? '').trim(),
@@ -241,6 +247,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       setExplain({ rowId: row.id, loading: false, content: String(data.explanation ?? ''), error: null });
     } catch (err) {
       setExplain({ rowId: row.id, loading: false, content: '', error: String(err instanceof Error ? err.message : err) });
@@ -387,6 +394,12 @@ export function TestCaseGenerator() {
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
+
+      {usage && (
+        <div className="mt-4">
+          <UsageChip usage={usage} />
+        </div>
+      )}
 
       {/* Results */}
       {rows.length > 0 && (
