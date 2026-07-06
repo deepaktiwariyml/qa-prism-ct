@@ -31,6 +31,7 @@ interface TicketRef {
 }
 interface ImpactResponse {
   prNumber: number;
+  prUrl?: string;
   repo: string;
   title: string;
   tickets?: TicketRef[];
@@ -197,9 +198,35 @@ export function ImpactAnalyser() {
               <div className="text-xs font-medium uppercase tracking-wide text-violet-600">
                 Impact analysis
               </div>
-              <h2 className="mt-1 truncate text-lg font-semibold">{result.title}</h2>
+              <h2 className="mt-1 truncate text-lg font-semibold">
+                {result.prUrl ? (
+                  <a
+                    href={result.prUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-slate-900 hover:text-indigo-600 hover:underline"
+                  >
+                    {result.title}
+                  </a>
+                ) : (
+                  result.title
+                )}
+              </h2>
               <p className="text-sm text-slate-500">
-                {result.repo} · PR #{result.prNumber}
+                {result.prUrl ? (
+                  <a
+                    href={result.prUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-indigo-600 hover:underline"
+                  >
+                    {result.repo} · PR #{result.prNumber}
+                  </a>
+                ) : (
+                  <>
+                    {result.repo} · PR #{result.prNumber}
+                  </>
+                )}
               </p>
               {result.tickets && result.tickets.length > 0 && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
