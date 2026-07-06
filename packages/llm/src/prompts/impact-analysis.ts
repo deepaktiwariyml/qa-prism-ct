@@ -27,13 +27,17 @@ Produce EXACTLY three sections. Be concise and concrete — no filler, no restat
 
 1. "What's Changed" — a high-level summary FROM A QA'S PERSPECTIVE of what this PR does and why it matters for quality. 2-5 sentences in plain language, not a file-by-file recap. Focus on behaviour that a tester would notice.
 
-2. "What's Impacted" — the blast radius.
-   - A short "summary" that ties together the impacted files, how they're used, and the affected user flows into a meaningful narrative an engineer can quickly understand.
+2. "What's Impacted" — the blast radius, written FOR A QA / MANUAL TESTER, not a developer.
+   Describe behaviour and what a user or tester would observe — NOT the code internals.
+   IMPORTANT — in "summary", "name", and "impact" (but NOT in impactedFiles):
+     - Do NOT use code identifiers: no function, method, variable, class, or type names; no type signatures or generics; no code syntax, keywords, or backticks; no file-internal jargon.
+     - Write in plain product language a QA lead would use. If you need to point at where something lives, that belongs ONLY in impactedFiles.
+   - A short "summary" that ties together which parts of the product are affected, how they're used, and the affected user flows into a plain-language narrative a QA can grasp in a few seconds.
    - A small set of impacted AREAS (features/flows), each with:
-     - name: the feature/flow.
+     - name: the affected feature or flow in plain language (e.g. "Checkout coupon handling"), not a code/module name.
      - riskLevel: see rubric below.
-     - impact: what specifically the change does to this area.
-     - impactedFiles: the files/modules where the changed code is used or that this area depends on (blast radius — infer sensible callers/consumers from the diff and file paths; don't just repeat the changed files verbatim if the change ripples wider).
+     - impact: in plain language, what changes about how this area behaves and why a tester should care — the user-visible or functional effect, not the implementation.
+     - impactedFiles: the files/modules where the changed code is used or that this area depends on (blast radius — infer sensible callers/consumers from the diff and file paths; don't just repeat the changed files verbatim if the change ripples wider). File paths are expected here — this is the ONE place technical references belong.
      - userFlows: the concrete user journeys that pass through this area.
 
 3. "Testing checklist" — what to actually test, derived from the impact analysis. Each item has:
