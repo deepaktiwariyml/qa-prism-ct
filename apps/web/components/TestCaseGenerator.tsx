@@ -248,13 +248,37 @@ export function TestCaseGenerator() {
   }
 
   async function copyExplanation() {
-    if (!explain?.content) return;
+    const text = explain?.content;
+    if (!text) return;
+    let ok = false;
+    // Preferred path — needs a secure context and clipboard-write permission.
     try {
-      await navigator.clipboard.writeText(explain.content);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {
+      // fall through to the legacy path
+    }
+    // Fallback for insecure contexts / permission-restricted iframes.
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard unavailable — ignore
     }
   }
 
