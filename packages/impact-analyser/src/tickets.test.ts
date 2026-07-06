@@ -31,6 +31,16 @@ describe('extractTickets', () => {
     expect(t[0]!.url).toBe('https://acme.atlassian.net/browse/SHOP-9');
   });
 
+  it('links bare keys using a Jira host inferred from another URL in the same text', () => {
+    // A branch/commit-style bare key plus one explicit Jira link elsewhere.
+    const t = extractTickets(
+      'branch feature/SHOP-42-x\nSHOP-42 wire it up\nRef: https://acme.atlassian.net/browse/SHOP-7',
+    );
+    const byKey = Object.fromEntries(t.map((x) => [x.key, x.url]));
+    expect(byKey['SHOP-7']).toBe('https://acme.atlassian.net/browse/SHOP-7');
+    expect(byKey['SHOP-42']).toBe('https://acme.atlassian.net/browse/SHOP-42');
+  });
+
   it('returns nothing for text with no tickets', () => {
     expect(extractTickets('just a normal description')).toEqual([]);
   });

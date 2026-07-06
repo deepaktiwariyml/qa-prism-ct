@@ -8,7 +8,7 @@ import {
 } from '@qa-prism/llm';
 import { fetchPr, type ChangedFile, type FetchImpl } from './github.js';
 import { parseGitHubPrUrl } from './parse-url.js';
-import { extractTickets, type TicketRef } from './tickets.js';
+import { extractTickets, mergeTickets, type TicketRef } from './tickets.js';
 
 /**
  * Max total patch characters sent to the LLM (bounded context — spec §7).
@@ -134,12 +134,20 @@ export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Pr
     schema: AnalysisSchema,
   });
 
+  // Ticket keys can live in the title, description, branch name, or commit
+  // messages; linked GitHub issues come from the "Development" panel.
+  const ticketText = [pr.title, pr.body, pr.branch, ...pr.commitMessages].join('\n');
+  const tickets = mergeTickets(
+    extractTickets(ticketText, { jiraBaseUrl: process.env.JIRA_BASE_URL }),
+    pr.linkedIssues.map((li) => ({ key: li.key, url: li.url, source: 'other' as const })),
+  );
+
   return {
     owner: ref.owner,
     repo: ref.repo,
     prNumber: ref.number,
     title: pr.title,
-    tickets: extractTickets(`${pr.title}\n${pr.body}`, { jiraBaseUrl: process.env.JIRA_BASE_URL }),
+    tickets,
     analysis: result,
     changedFiles: pr.files.map((f) => f.filename),
     limitations,
