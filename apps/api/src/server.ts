@@ -5,7 +5,7 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
-import { createLlmClient } from '@qa-prism/llm';
+import { createLlmClient, setUsageRecorder, type TokenUsage } from '@qa-prism/llm';
 import { buildHtmlReport, type ReportScan } from './report.js';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
@@ -117,6 +117,30 @@ const CreateScanBody = z.object({
 export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   const app = Fastify({ logger: true });
   const prisma = getPrisma();
+
+  // Accounting for every Claude call (spec §7). Registered once; fired from
+  // inside the LLM client, so no call site can forget to report — the failing
+  // attempt of a retry is billed and recorded too. Upsert increments the
+  // per-(day, model, operation) row. Never throws back into the LLM call.
+  setUsageRecorder(async (u: TokenUsage) => {
+    const day = new Date().toISOString().slice(0, 10); // UTC yyyy-mm-dd
+    // Atomic upsert-increment via native INSERT ... ON CONFLICT. Postgres
+    // serialises concurrent writers on the row (and on the first-insert
+    // conflict), so simultaneous calls from many users can never lose an
+    // update or throw a unique-violation — the counts stay exact.
+    await prisma.$executeRaw`
+      INSERT INTO "LlmUsageDaily"
+        ("id", "day", "model", "operation", "calls", "inputTokens", "outputTokens", "costUsd", "updatedAt")
+      VALUES
+        (gen_random_uuid()::text, ${day}::date, ${u.model}, ${u.operation}, 1, ${u.inputTokens}, ${u.outputTokens}, ${u.costUsd}, now())
+      ON CONFLICT ("day", "model", "operation") DO UPDATE SET
+        "calls" = "LlmUsageDaily"."calls" + 1,
+        "inputTokens" = "LlmUsageDaily"."inputTokens" + EXCLUDED."inputTokens",
+        "outputTokens" = "LlmUsageDaily"."outputTokens" + EXCLUDED."outputTokens",
+        "costUsd" = "LlmUsageDaily"."costUsd" + EXCLUDED."costUsd",
+        "updatedAt" = now()
+    `;
+  });
 
   // Allow the dashboard (and other local clients) to call the API from a browser.
   void app.register(cors, { origin: true });
@@ -252,6 +276,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       analysis,
       changedFiles: result.changedFiles,
       limitations: result.limitations,
+      usage: result.usage,
     };
   });
 
@@ -268,6 +293,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const schema = z.object({ words: z.array(z.string()) });
       const result = await llm.completeJSON({
         model: FAST_MODEL,
+        operation: 'fun.words',
         system:
           `You generate word lists for a family-friendly word-search game. Every word MUST come from the information technology and software industry and be relevant to the company "${company}" and the kind of work it does (digital products, design, engineering, web, cloud, data, AI). ` +
           `Rules: single real English words; ${minLen}-${maxLen} letters; letters A-Z only (no spaces, digits, hyphens, or accents); UPPERCASE. Use positive or neutral professional vocabulary ONLY — absolutely no offensive, violent, sensitive, or negative words.`,
@@ -300,7 +326,10 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
           .min(1)
           .max(200),
       });
+      let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
+        operation: 'testcases.generate',
+        onUsage: (u) => (usage = u),
         system:
           'You are a senior QA engineer. Given a feature or requirement, produce a COMPREHENSIVE set of clear, ONE-LINE manual test cases a tester can execute — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). Each title is a single concise sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states). Cover all three thoroughly.',
         prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
@@ -310,7 +339,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         .map((t) => ({ title: t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: t.type }))
         .filter((t) => t.title.length > 0)
         .slice(0, 200);
-      return { testcases };
+      return { testcases, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -327,8 +356,11 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const llm = createLlmClient();
       const schema = z.object({ rows: z.array(z.array(z.string())) });
       const numbered = testcases.map((t, i) => `${i + 1}. ${t}`).join('\n');
+      let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
         model: FAST_MODEL,
+        operation: 'testcases.fill-columns',
+        onUsage: (u) => (usage = u),
         system:
           'You are a senior QA engineer filling in a test-case table. For each test case (a fixed one-line title you must NOT change or restate) and each requested column, produce a concise, useful cell value inferred from the column name (e.g. "Priority" -> High/Medium/Low; "Preconditions", "Test Steps", "Expected Result", "Test Data" -> a short phrase or sentence). Return JSON with a `rows` matrix where rows[i] is the array of cell values for test case i, one value per column in the exact given order.',
         prompt: `Columns (in order): ${JSON.stringify(columns)}\n\nTest cases:\n${numbered}\n\nReturn JSON: {"rows":[["col1 value","col2 value", ...], ...]} with exactly ${testcases.length} rows and ${columns.length} values each.`,
@@ -339,7 +371,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         const row = result.rows[i] ?? [];
         return columns.map((__, j) => String(row[j] ?? ''));
       });
-      return { rows };
+      return { rows, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -355,13 +387,16 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         title: z.string().min(1),
         type: z.enum(['positive', 'negative', 'edge']),
       });
+      let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
+        operation: 'testcases.combine',
+        onUsage: (u) => (usage = u),
         system:
           'You are a senior QA engineer. Merge the given manual test cases into ONE coherent, concise one-line test case that preserves their combined intent and important checks. Imperative, no numbering. Classify it as positive, negative, or edge.',
         prompt: `Combine these test cases into one:\n${parsed.data.testcases.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn JSON: {"title":"...","type":"positive|negative|edge"}.`,
         schema,
       });
-      return { title: result.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: result.type };
+      return { title: result.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: result.type, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -374,16 +409,103 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     try {
       const llm = createLlmClient();
       const schema = z.object({ explanation: z.string().min(1) });
+      let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
+        operation: 'testcases.explain',
+        onUsage: (u) => (usage = u),
         system:
           'You are a senior QA engineer. Given a one-line manual test case, explain it clearly and practically for a tester: what it verifies, any preconditions, the steps to execute, and the expected result. Keep it concise and well-structured (a short paragraph or a few labelled lines). Return plain text in "explanation".',
         prompt: `Explain this test case:\n"${parsed.data.testcase}"\n\nReturn JSON: {"explanation":"..."}.`,
         schema,
       });
-      return { explanation: result.explanation };
+      return { explanation: result.explanation, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  // LLM token + cost consumption, aggregated per day (spec §7). Paginated by
+  // day (newest first, `limit` days per page from `offset`); `totals` is
+  // all-time across every day, independent of the page.
+  app.get('/usage', async (req) => {
+    const q = req.query as { limit?: string; offset?: string };
+    const limit = Math.min(Math.max(Number(q.limit) || 10, 1), 60);
+    const offset = Math.max(Number(q.offset) || 0, 0);
+
+    // Page of distinct days, newest first (fetch one extra to detect hasMore).
+    const dayRows = await prisma.$queryRaw<Array<{ day: Date }>>`
+      SELECT DISTINCT "day" FROM "LlmUsageDaily" ORDER BY "day" DESC LIMIT ${limit + 1} OFFSET ${offset}
+    `;
+    const hasMore = dayRows.length > limit;
+    const pageDays = dayRows.slice(0, limit).map((r) => r.day);
+
+    const rows = pageDays.length
+      ? await prisma.llmUsageDaily.findMany({
+          where: { day: { in: pageDays } },
+          orderBy: [{ day: 'desc' }, { costUsd: 'desc' }],
+        })
+      : [];
+
+    // All-time totals — the top-line numbers reflect everything, not the page.
+    const agg = await prisma.llmUsageDaily.aggregate({
+      _sum: { calls: true, inputTokens: true, outputTokens: true, costUsd: true },
+    });
+
+    const byDay = new Map<
+      string,
+      {
+        date: string;
+        calls: number;
+        inputTokens: number;
+        outputTokens: number;
+        costUsd: number;
+        breakdown: Array<{
+          model: string;
+          operation: string;
+          calls: number;
+          inputTokens: number;
+          outputTokens: number;
+          costUsd: number;
+        }>;
+      }
+    >();
+
+    for (const r of rows) {
+      const date = r.day.toISOString().slice(0, 10);
+      const cost = Number(r.costUsd);
+      let d = byDay.get(date);
+      if (!d) {
+        d = { date, calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, breakdown: [] };
+        byDay.set(date, d);
+      }
+      d.calls += r.calls;
+      d.inputTokens += r.inputTokens;
+      d.outputTokens += r.outputTokens;
+      d.costUsd += cost;
+      d.breakdown.push({
+        model: r.model,
+        operation: r.operation,
+        calls: r.calls,
+        inputTokens: r.inputTokens,
+        outputTokens: r.outputTokens,
+        costUsd: cost,
+      });
+    }
+
+    // Round money to cents-ish for stable display (keep 4 dp for tiny costs).
+    const round = (n: number) => Math.round(n * 10_000) / 10_000;
+    const days = [...byDay.values()].map((d) => ({
+      ...d,
+      costUsd: round(d.costUsd),
+      breakdown: d.breakdown.map((b) => ({ ...b, costUsd: round(b.costUsd) })),
+    }));
+    const totals = {
+      calls: agg._sum.calls ?? 0,
+      inputTokens: agg._sum.inputTokens ?? 0,
+      outputTokens: agg._sum.outputTokens ?? 0,
+      costUsd: round(Number(agg._sum.costUsd ?? 0)),
+    };
+    return { days, hasMore, totals };
   });
 
   // Poll a scan: status, findings, and score once computed. The screenshot/

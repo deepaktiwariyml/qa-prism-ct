@@ -9,7 +9,7 @@ const NAV = [
   { href: '/testcases', label: 'Test Cases' },
   { href: '/generator', label: 'Framework Generator' },
   { href: '/impact', label: 'Impact analyser' },
-  { href: '/modules', label: 'Modules' },
+  { href: '/consumption', label: 'Usage' },
 ];
 
 export function SiteHeader({
@@ -30,7 +30,7 @@ export function SiteHeader({
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-        <Link href="/" className="flex items-center gap-2.5">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5">
           <Logo className="h-9 w-9" />
           <span className="flex items-center gap-2">
             <span className="text-[17px] font-semibold tracking-tight text-slate-900">
@@ -41,7 +41,7 @@ export function SiteHeader({
             </span>
           </span>
         </Link>
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-0.5 md:flex">
           {authed &&
             nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
@@ -49,7 +49,7 @@ export function SiteHeader({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
                   active ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -58,18 +58,18 @@ export function SiteHeader({
             );
           })}
         </nav>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {authed ? (
             <button
               onClick={logout}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
             >
               Log out
             </button>
           ) : (
             <Link
               href="/login"
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
+              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"
             >
               Log in
             </Link>

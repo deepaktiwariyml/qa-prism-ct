@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentState } from '@/lib/usePersistentState';
+import { UsageChip } from '@/components/UsageChip';
+import type { CallUsage } from '@/lib/usage';
 
 type Scope = 'all' | 'approved';
 
@@ -13,6 +15,23 @@ interface Column {
   id: string;
   name: string;
 }
+
+/** The standard columns a QA test-case document can carry. The "Add column"
+ *  menu offers exactly these — checking adds, unchecking removes. */
+const PRESET_COLUMNS = [
+  'Priority',
+  'Severity',
+  'Status', // execution result — Pass / Fail
+  'Author',
+  'Preconditions',
+  'Test Steps',
+  'Test Data',
+  'Expected Result',
+  'Module',
+  'Test Type',
+  'Automation Status',
+  'Remarks',
+] as const;
 
 interface Row {
   id: string;
@@ -54,6 +73,44 @@ export function TestCaseGenerator() {
     error: string | null;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [usage, setUsage] = useState<CallUsage | null>(null);
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  const colMenuRef = useRef<HTMLDivElement>(null);
+  // Per-column pixel widths (drag-to-resize). Keyed by 'text' for the Test
+  // Case column and by column id for each added column.
+  const [colWidths, setColWidths] = usePersistentState<Record<string, number>>(
+    'qa-prism:tc:colWidths',
+    {},
+  );
+  const widthOf = (key: string, fallback: number) => colWidths[key] ?? fallback;
+
+  /** Start a horizontal column-resize drag from a header handle. */
+  function startResize(e: React.PointerEvent, key: string, fallback: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = widthOf(key, fallback);
+    const onMove = (ev: PointerEvent) => {
+      const next = Math.max(90, startW + (ev.clientX - startX));
+      setColWidths((w) => ({ ...w, [key]: next }));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  const TEXT_COL_DEFAULT = 380;
+  const CUSTOM_COL_DEFAULT = 190;
+  const tableWidth =
+    36 + 44 + widthOf('text', TEXT_COL_DEFAULT) + 150 +
+    columns.reduce((sum, c) => sum + widthOf(c.id, CUSTOM_COL_DEFAULT), 0);
 
   // Close the download dropdown when clicking outside it.
   useEffect(() => {
@@ -66,6 +123,18 @@ export function TestCaseGenerator() {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [openMenu]);
+
+  // Close the "Add column" dropdown when clicking outside it.
+  useEffect(() => {
+    if (!colMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
+        setColMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [colMenuOpen]);
 
   const counts = useMemo(() => {
     const c = { total: rows.length, approved: 0, discarded: 0, positive: 0, negative: 0, edge: 0 };
@@ -89,6 +158,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       const cases: Array<{ title: string; type: CaseType }> = Array.isArray(data.testcases)
         ? data.testcases
         : [];
@@ -110,9 +180,20 @@ export function TestCaseGenerator() {
     }
   }
 
-  /** Fill empty custom-column cells via the LLM. Test case titles are never changed. */
+  /**
+   * Fill ONLY empty column cells via the LLM — filled cells are left untouched
+   * and never re-sent. We request just the rows and columns that actually have
+   * a gap, and if nothing is empty we don't call the API at all.
+   */
   async function fillColumns() {
     if (columns.length === 0 || rows.length === 0) return;
+    const isEmpty = (r: Row, c: Column) => !(r.values[c.id] ?? '').trim();
+    const rowsToFill = rows.filter((r) => columns.some((c) => isEmpty(r, c)));
+    const colsToFill = columns.filter((c) => rows.some((r) => isEmpty(r, c)));
+    if (rowsToFill.length === 0 || colsToFill.length === 0) {
+      setError('All column cells are already filled — nothing to generate.');
+      return;
+    }
     setFilling(true);
     setError(null);
     try {
@@ -120,19 +201,34 @@ export function TestCaseGenerator() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          testcases: rows.map((r) => r.text),
-          columns: columns.map((c) => c.name || 'Column'),
+          testcases: rowsToFill.map((r) => r.text),
+          columns: colsToFill.map((c) => c.name || 'Column'),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       const matrix: string[][] = Array.isArray(data.rows) ? data.rows : [];
+      // Map generated values back to the exact empty cells they were for.
+      const fills = new Map<string, Record<string, string>>();
+      rowsToFill.forEach((r, i) => {
+        const add: Record<string, string> = {};
+        colsToFill.forEach((c, j) => {
+          if (isEmpty(r, c)) {
+            const v = matrix[i]?.[j] ?? '';
+            if (v) add[c.id] = v;
+          }
+        });
+        if (Object.keys(add).length) fills.set(r.id, add);
+      });
       setRows((rs) =>
-        rs.map((r, i) => {
+        rs.map((r) => {
+          const add = fills.get(r.id);
+          if (!add) return r;
           const values = { ...r.values };
-          columns.forEach((c, j) => {
-            if (!values[c.id]) values[c.id] = matrix[i]?.[j] ?? '';
-          });
+          for (const [colId, v] of Object.entries(add)) {
+            if (!(values[colId] ?? '').trim()) values[colId] = v; // never overwrite
+          }
           return { ...r, values };
         }),
       );
@@ -149,11 +245,14 @@ export function TestCaseGenerator() {
     );
   }
 
-  function addColumn() {
-    setColumns((c) => [...c, { id: uid(), name: `Column ${c.length + 1}` }]);
-  }
-  function renameColumn(id: string, name: string) {
-    setColumns((c) => c.map((col) => (col.id === id ? { ...col, name } : col)));
+  /** Toggle a preset column on/off. Removing also clears its cell values. */
+  function toggleColumn(name: string) {
+    const existing = columns.find((c) => c.name === name);
+    if (existing) {
+      removeColumn(existing.id);
+    } else {
+      setColumns((c) => [...c, { id: uid(), name }]);
+    }
   }
   function removeColumn(id: string) {
     setColumns((c) => c.filter((col) => col.id !== id));
@@ -198,6 +297,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       const combined: Row = {
         id: uid(),
         text: String(data.title ?? '').trim(),
@@ -241,6 +341,7 @@ export function TestCaseGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
       setExplain({ rowId: row.id, loading: false, content: String(data.explanation ?? ''), error: null });
     } catch (err) {
       setExplain({ rowId: row.id, loading: false, content: '', error: String(err instanceof Error ? err.message : err) });
@@ -285,7 +386,7 @@ export function TestCaseGenerator() {
   /** Export matrix — classification (type) is UI-only and intentionally excluded. */
   function toMatrix(scope: Scope): string[][] {
     const source = scope === 'approved' ? rows.filter((r) => r.status === 'approved') : rows;
-    const header = ['#', 'Test Case', 'Status', ...columns.map((c) => c.name || 'Column')];
+    const header = ['#', 'Test Case', 'Decision', ...columns.map((c) => c.name || 'Column')];
     const body = source.map((r, i) => [
       String(i + 1),
       r.text,
@@ -388,6 +489,12 @@ export function TestCaseGenerator() {
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
+      {usage && (
+        <div className="mt-4">
+          <UsageChip usage={usage} />
+        </div>
+      )}
+
       {/* Results */}
       {rows.length > 0 && (
         <div className="mt-8">
@@ -421,12 +528,42 @@ export function TestCaseGenerator() {
                 {combining ? 'Combining…' : `⧉ Combine ${selected.size} test cases`}
               </button>
             )}
-            <button
-              onClick={addColumn}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              + Add column
-            </button>
+            <div ref={colMenuRef} className="relative">
+              <button
+                onClick={() => setColMenuOpen((o) => !o)}
+                aria-expanded={colMenuOpen}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                + Add column
+                <svg viewBox="0 0 20 20" fill="currentColor" className={`h-4 w-4 text-slate-400 transition-transform ${colMenuOpen ? 'rotate-180' : ''}`} aria-hidden="true">
+                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.38a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {colMenuOpen && (
+                <div className="absolute right-0 z-20 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-lg">
+                  <div className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Test case columns
+                  </div>
+                  {PRESET_COLUMNS.map((name) => {
+                    const checked = columns.some((c) => c.name === name);
+                    return (
+                      <label
+                        key={name}
+                        className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleColumn(name)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                        />
+                        {name}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             {columns.length > 0 && (
               <button
                 onClick={fillColumns}
@@ -459,31 +596,45 @@ export function TestCaseGenerator() {
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-            <table className="w-full min-w-[760px] border-collapse text-sm">
+            <table
+              className="table-fixed border-collapse text-sm"
+              style={{ width: tableWidth, minWidth: '100%' }}
+            >
+              <colgroup>
+                <col style={{ width: 36 }} />
+                <col style={{ width: 44 }} />
+                <col style={{ width: widthOf('text', TEXT_COL_DEFAULT) }} />
+                {columns.map((c) => (
+                  <col key={c.id} style={{ width: widthOf(c.id, CUSTOM_COL_DEFAULT) }} />
+                ))}
+                <col style={{ width: 150 }} />
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="w-9 px-3 py-2.5" />
-                  <th className="w-10 px-3 py-2.5">#</th>
-                  <th className="px-3 py-2.5">Test case</th>
+                  <th className="px-3 py-2.5" />
+                  <th className="px-3 py-2.5">#</th>
+                  <th className="relative px-3 py-2.5">
+                    Test case
+                    <ResizeHandle onPointerDown={(e) => startResize(e, 'text', TEXT_COL_DEFAULT)} />
+                  </th>
                   {columns.map((c) => (
-                    <th key={c.id} className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        <input
-                          value={c.name}
-                          onChange={(e) => renameColumn(c.id, e.target.value)}
-                          className="w-28 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:border-slate-300 focus:border-indigo-400 focus:outline-none"
-                        />
+                    <th key={c.id} className="relative px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 pr-2">
+                        <span className="truncate text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          {c.name}
+                        </span>
                         <button
                           onClick={() => removeColumn(c.id)}
                           title="Remove column"
-                          className="text-slate-300 hover:text-red-500"
+                          className="shrink-0 text-slate-300 hover:text-red-500"
                         >
                           ✕
                         </button>
                       </div>
+                      <ResizeHandle onPointerDown={(e) => startResize(e, c.id, CUSTOM_COL_DEFAULT)} />
                     </th>
                   ))}
-                  <th className="w-40 px-3 py-2.5 text-center">Decision</th>
+                  <th className="px-3 py-2.5 text-center">Decision</th>
                 </tr>
               </thead>
               <tbody>
@@ -560,7 +711,8 @@ export function TestCaseGenerator() {
             </table>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Tip: click a column header to rename it, then “Fill columns with AI” to auto-populate.
+            Tip: use “Add column” to pick standard QA columns, then “Fill columns with AI” to
+            auto-populate only the empty cells (filled ones are never overwritten or re-sent).
             Positive / Negative / Edge tags are shown here to help you review — they’re not included
             in the export.
           </p>
@@ -622,6 +774,21 @@ export function TestCaseGenerator() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Drag handle on a column's right edge to resize it. */
+function ResizeHandle({ onPointerDown }: { onPointerDown: (e: React.PointerEvent) => void }) {
+  return (
+    <span
+      onPointerDown={onPointerDown}
+      role="separator"
+      aria-orientation="vertical"
+      title="Drag to resize column"
+      className="absolute right-0 top-0 z-10 flex h-full w-2 cursor-col-resize touch-none items-center justify-center hover:bg-indigo-200/60"
+    >
+      <span className="h-1/2 w-px bg-slate-300" />
+    </span>
   );
 }
 

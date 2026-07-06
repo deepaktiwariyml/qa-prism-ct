@@ -150,3 +150,21 @@ model Ticket {
   @@unique([findingId, provider])
   @@index([findingId])
 }
+
+/// Per-day, per-model, per-operation LLM token + cost accounting. Upserted
+/// (incremented) on every Claude call so the Consumption view can show what
+/// was spent each day and where. One row per (day, model, operation).
+model LlmUsageDaily {
+  id           String   @id @default(cuid())
+  day          DateTime @db.Date
+  model        String
+  operation    String
+  calls        Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costUsd      Decimal  @default(0) @db.Decimal(12, 6)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([day, model, operation])
+  @@index([day])
+}
