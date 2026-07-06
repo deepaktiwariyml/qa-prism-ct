@@ -21,6 +21,8 @@ interface Column {
 const PRESET_COLUMNS = [
   'Priority',
   'Severity',
+  'Status', // execution result — Pass / Fail
+  'Author',
   'Preconditions',
   'Test Steps',
   'Test Data',
@@ -349,7 +351,7 @@ export function TestCaseGenerator() {
   /** Export matrix — classification (type) is UI-only and intentionally excluded. */
   function toMatrix(scope: Scope): string[][] {
     const source = scope === 'approved' ? rows.filter((r) => r.status === 'approved') : rows;
-    const header = ['#', 'Test Case', 'Status', ...columns.map((c) => c.name || 'Column')];
+    const header = ['#', 'Test Case', 'Decision', ...columns.map((c) => c.name || 'Column')];
     const body = source.map((r, i) => [
       String(i + 1),
       r.text,
