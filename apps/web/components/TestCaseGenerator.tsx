@@ -247,12 +247,6 @@ export function TestCaseGenerator() {
     }
   }
 
-  function replaceWithExplanation() {
-    if (!explain || explain.loading || !explain.content) return;
-    setText(explain.rowId, explain.content.trim());
-    setExplain(null);
-  }
-
   async function copyExplanation() {
     if (!explain?.content) return;
     try {
@@ -595,16 +589,9 @@ export function TestCaseGenerator() {
               <button
                 onClick={copyExplanation}
                 disabled={explain.loading || !!explain.error}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {copied ? '✓ Copied' : 'Copy'}
-              </button>
-              <button
-                onClick={replaceWithExplanation}
-                disabled={explain.loading || !!explain.error}
                 className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
               >
-                Replace test case with this
+                {copied ? '✓ Copied' : 'Copy'}
               </button>
             </div>
           </div>
