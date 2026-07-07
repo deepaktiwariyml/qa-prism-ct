@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { UsageChip } from '@/components/UsageChip';
+import { Markdown } from '@/components/Markdown';
 import type { CallUsage } from '@/lib/usage';
 
 type Scope = 'all' | 'approved';
@@ -882,9 +883,7 @@ export function TestCaseGenerator() {
               ) : explain.error ? (
                 <p className="text-sm text-red-600">{explain.error}</p>
               ) : (
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                  {explain.content}
-                </p>
+                <Markdown text={explain.content} />
               )}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
@@ -937,9 +936,7 @@ export function TestCaseGenerator() {
               ) : feature.error ? (
                 <p className="text-sm text-red-600">{feature.error}</p>
               ) : (
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                  {feature.content}
-                </p>
+                <Markdown text={feature.content} />
               )}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">

@@ -379,7 +379,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const schema = z.object({ explanation: z.string().min(1) });
       let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
-        operation: 'testcases.explain-feature',
+        operation: 'Explain Feature',
         onUsage: (u) => (usage = u),
         system:
           'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Structure the answer with short labelled parts: "In simple terms" (1-2 sentences), "How it works" (a few plain steps), "Example" (a concrete walkthrough), and "Why it matters" (business value). Keep it concise and friendly. Return plain text (you may use simple markdown headings and bullets) in "explanation".',
