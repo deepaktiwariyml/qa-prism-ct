@@ -37,6 +37,7 @@ export function Markdown({ text, className = '' }: { text: string; className?: s
   const blocks: ReactNode[] = [];
   let para: string[] = [];
   let list: string[] = [];
+  let listType: 'ul' | 'ol' = 'ul';
   let key = 0;
 
   const flushPara = () => {
@@ -59,12 +60,20 @@ export function Markdown({ text, className = '' }: { text: string; className?: s
     if (!list.length) return;
     const items = [...list];
     const k = key++;
+    const cls = `mb-3 ml-5 space-y-1 text-sm leading-relaxed text-slate-700 ${
+      listType === 'ol' ? 'list-decimal' : 'list-disc'
+    }`;
+    const children = items.map((it, idx) => <li key={idx}>{renderInline(it, `l${k}-${idx}`)}</li>);
     blocks.push(
-      <ul key={k} className="mb-3 ml-5 list-disc space-y-1 text-sm leading-relaxed text-slate-700">
-        {items.map((it, idx) => (
-          <li key={idx}>{renderInline(it, `l${k}-${idx}`)}</li>
-        ))}
-      </ul>,
+      listType === 'ol' ? (
+        <ol key={k} className={cls}>
+          {children}
+        </ol>
+      ) : (
+        <ul key={k} className={cls}>
+          {children}
+        </ul>
+      ),
     );
     list = [];
   };
@@ -73,6 +82,7 @@ export function Markdown({ text, className = '' }: { text: string; className?: s
     const line = raw.trimEnd();
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (heading) {
       flushPara();
       flushList();
@@ -83,8 +93,15 @@ export function Markdown({ text, className = '' }: { text: string; className?: s
           {renderInline(heading[2]!, `h${k}`)}
         </p>,
       );
+    } else if (ordered) {
+      flushPara();
+      if (listType !== 'ol') flushList();
+      listType = 'ol';
+      list.push(ordered[1]!);
     } else if (bullet) {
       flushPara();
+      if (listType !== 'ul') flushList();
+      listType = 'ul';
       list.push(bullet[1]!);
     } else if (line.trim() === '') {
       flushPara();
