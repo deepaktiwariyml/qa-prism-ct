@@ -5,7 +5,12 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
-import { createLlmClient, setUsageRecorder, type TokenUsage } from '@qa-prism/llm';
+import {
+  createLlmClient,
+  setUsageRecorder,
+  DEFAULT_TESTCASE_SYSTEM,
+  type TokenUsage,
+} from '@qa-prism/llm';
 import { buildHtmlReport, type ReportScan } from './report.js';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
@@ -25,6 +30,12 @@ const FunWordsBody = z.object({
 const TestCasesBody = z.object({
   description: z.string().min(3).max(20_000),
   context: z.string().max(200).optional(),
+  system: z.string().min(1).max(20_000).optional(), // override the default QA system prompt
+  format: z.enum(['standard', 'bdd']).optional(),
+});
+
+const ExplainFeatureBody = z.object({
+  description: z.string().min(3).max(20_000),
 });
 
 const FillColumnsBody = z.object({
@@ -313,6 +324,8 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     const parsed = TestCasesBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
     const { description, context } = parsed.data;
+    const system = parsed.data.system?.trim() || DEFAULT_TESTCASE_SYSTEM;
+    const bdd = parsed.data.format === 'bdd';
     try {
       const llm = createLlmClient();
       const schema = z.object({
@@ -326,20 +339,54 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
           .min(1)
           .max(200),
       });
+      // The output shape is app-controlled so it fits the results table,
+      // regardless of the (possibly user-overridden) system prompt above.
+      const outputInstruction = bdd
+        ? 'For each test case, "title" must be a COMPLETE, atomic Gherkin scenario as multi-line text starting with "Scenario:" (or "Scenario Outline:") followed by Given/When/Then/And steps (use real newlines "\\n"). Classify each as "positive", "negative", or "edge". Cover positive, negative, edge, state-transition, resiliency, accessibility, security, and concurrency scenarios.'
+        : 'For each test case, "title" is a single concise ONE-LINE sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states).';
       let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
         operation: 'testcases.generate',
         onUsage: (u) => (usage = u),
-        system:
-          'You are a senior QA engineer. Given a feature or requirement, produce a COMPREHENSIVE set of clear, ONE-LINE manual test cases a tester can execute — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). Each title is a single concise sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states). Cover all three thoroughly.',
-        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
+        system,
+        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nProduce a COMPREHENSIVE set of manual test cases — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). ${outputInstruction}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
         schema,
       });
       const testcases = result.testcases
-        .map((t) => ({ title: t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: t.type }))
+        .map((t) => ({
+          // Only strip leading list markers for plain one-liners; keep Gherkin text intact.
+          title: bdd ? t.title.trim() : t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(),
+          type: t.type,
+        }))
         .filter((t) => t.title.length > 0)
         .slice(0, 200);
       return { testcases, usage };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Return the default QA system prompt so the UI can show it as an editable,
+  // overridable default (single source of truth).
+  app.get('/testcases/system-prompt', async () => ({ prompt: DEFAULT_TESTCASE_SYSTEM }));
+
+  // Explain a feature in plain language for any audience (beginner → director).
+  app.post('/testcases/explain-feature', async (req, reply) => {
+    const parsed = ExplainFeatureBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ explanation: z.string().min(1) });
+      let usage: TokenUsage | undefined;
+      const result = await llm.completeJSON({
+        operation: 'testcases.explain-feature',
+        onUsage: (u) => (usage = u),
+        system:
+          'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Structure the answer with short labelled parts: "In simple terms" (1-2 sentences), "How it works" (a few plain steps), "Example" (a concrete walkthrough), and "Why it matters" (business value). Keep it concise and friendly. Return plain text (you may use simple markdown headings and bullets) in "explanation".',
+        prompt: `Explain this feature so everyone understands it:\n${parsed.data.description}\n\nReturn JSON: {"explanation":"..."}.`,
+        schema,
+      });
+      return { explanation: result.explanation, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }

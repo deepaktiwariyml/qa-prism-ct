@@ -15,3 +15,4 @@ export type { RawUsage, TokenUsage, UsageRecorder } from './usage.js';
 export { priceFor, costOf } from './pricing.js';
 export type { ModelPrice } from './pricing.js';
 export { IMPACT_ANALYSIS_SYSTEM, buildImpactAnalysisPrompt } from './prompts/impact-analysis.js';
+export { DEFAULT_TESTCASE_SYSTEM } from './prompts/testcase-system.js';

@@ -74,6 +74,78 @@ export function TestCaseGenerator() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const [usage, setUsage] = useState<CallUsage | null>(null);
+  const [bdd, setBdd] = usePersistentState('qa-prism:tc:bdd', false);
+  // System-prompt override: '' means "use the server default".
+  const [systemPrompt, setSystemPrompt] = usePersistentState('qa-prism:tc:system', '');
+  const [systemOpen, setSystemOpen] = useState(false);
+  const [systemLoading, setSystemLoading] = useState(false);
+  const [feature, setFeature] = useState<{ loading: boolean; content: string; error: string | null } | null>(
+    null,
+  );
+  const [featureCopied, setFeatureCopied] = useState(false);
+
+  // Lazy-load the default system prompt into the editor the first time the
+  // Advanced panel is opened (and it hasn't been customised yet).
+  async function openSystemPanel() {
+    const next = !systemOpen;
+    setSystemOpen(next);
+    if (next && !systemPrompt.trim()) {
+      setSystemLoading(true);
+      try {
+        const res = await fetch('/api/testcases/system-prompt', { cache: 'no-store' });
+        const data = await res.json();
+        if (res.ok && data.prompt) setSystemPrompt(data.prompt as string);
+      } catch {
+        /* leave empty — server falls back to its default on generate */
+      } finally {
+        setSystemLoading(false);
+      }
+    }
+  }
+
+  async function resetSystemPrompt() {
+    setSystemLoading(true);
+    try {
+      const res = await fetch('/api/testcases/system-prompt', { cache: 'no-store' });
+      const data = await res.json();
+      if (res.ok && data.prompt) setSystemPrompt(data.prompt as string);
+    } catch {
+      /* ignore */
+    } finally {
+      setSystemLoading(false);
+    }
+  }
+
+  async function explainFeature() {
+    if (!description.trim()) return;
+    setFeature({ loading: true, content: '', error: null });
+    setFeatureCopied(false);
+    try {
+      const res = await fetch('/api/testcases/explain-feature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: description.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      if (data.usage) setUsage(data.usage as CallUsage);
+      setFeature({ loading: false, content: String(data.explanation ?? ''), error: null });
+    } catch (err) {
+      setFeature({ loading: false, content: '', error: String(err instanceof Error ? err.message : err) });
+    }
+  }
+
+  async function copyFeature() {
+    const text = feature?.content;
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      setFeatureCopied(true);
+      setTimeout(() => setFeatureCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }
   const [colMenuOpen, setColMenuOpen] = useState(false);
   const colMenuRef = useRef<HTMLDivElement>(null);
   // Per-column pixel widths (drag-to-resize). Keyed by 'text' for the Test
@@ -154,7 +226,11 @@ export function TestCaseGenerator() {
       const res = await fetch('/api/testcases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({
+          description: description.trim(),
+          format: bdd ? 'bdd' : 'standard',
+          ...(systemPrompt.trim() ? { system: systemPrompt.trim() } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
@@ -475,7 +551,7 @@ export function TestCaseGenerator() {
             disabled={busy || !description.trim()}
             className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Generating…' : 'Generate test cases'}
+            {busy ? 'Generating…' : `Generate test cases${bdd ? ' (BDD)' : ''}`}
           </button>
           <button
             type="button"
@@ -485,7 +561,63 @@ export function TestCaseGenerator() {
           >
             Import from Jira (soon)
           </button>
+          <button
+            type="button"
+            onClick={explainFeature}
+            disabled={!description.trim()}
+            title="Explain this feature in plain language"
+            className="rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-50"
+          >
+            💡 Explain Feature
+          </button>
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={bdd}
+              onChange={(e) => setBdd(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+            />
+            Generate in BDD (Gherkin) format
+          </label>
+          <button
+            type="button"
+            onClick={openSystemPanel}
+            className="text-sm font-medium text-indigo-600 hover:underline"
+          >
+            {systemOpen ? 'Hide' : 'Customise'} QA system prompt{systemPrompt.trim() ? ' ✎' : ''}
+          </button>
+        </div>
+
+        {systemOpen && (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                QA system prompt (override the default)
+              </label>
+              <button
+                type="button"
+                onClick={resetSystemPrompt}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700"
+              >
+                ↺ Reset to default
+              </button>
+            </div>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={10}
+              placeholder={systemLoading ? 'Loading default…' : 'Leave blank to use the built-in QA-Bot V3 default.'}
+              className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 outline-none focus:border-indigo-500"
+            />
+            <p className="mt-1.5 text-xs text-slate-400">
+              This steers how test cases are reasoned about. The output format (table rows / Gherkin)
+              is controlled by the app, so your changes here shape coverage, not the shape.
+            </p>
+          </div>
+        )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
@@ -768,6 +900,61 @@ export function TestCaseGenerator() {
                 className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
               >
                 {copied ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {feature && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setFeature(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Feature explanation"
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <h3 className="text-sm font-semibold text-slate-800">💡 Feature explained (for everyone)</h3>
+              <button
+                onClick={() => setFeature(null)}
+                aria-label="Close"
+                className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="min-h-[80px] flex-1 overflow-y-auto px-5 py-4">
+              {feature.loading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-indigo-600" />
+                  Explaining this feature in plain language…
+                </div>
+              ) : feature.error ? (
+                <p className="text-sm text-red-600">{feature.error}</p>
+              ) : (
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                  {feature.content}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+              <button
+                onClick={() => setFeature(null)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={copyFeature}
+                disabled={feature.loading || !!feature.error}
+                className="rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              >
+                {featureCopied ? '✓ Copied' : 'Copy'}
               </button>
             </div>
           </div>
