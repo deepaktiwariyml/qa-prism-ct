@@ -77,6 +77,13 @@ function sanitizeFunWords(raw: unknown[], minLen: number, maxLen: number, count:
   return out;
 }
 
+/** Strip a wrapping ```lang … ``` code fence if the model added one. */
+function stripCodeFence(s: string): string {
+  const t = s.trim();
+  const m = t.match(/^```[^\n]*\n([\s\S]*?)\n?```$/);
+  return (m ? m[1]! : t).trim();
+}
+
 /** Attach existing-finding ids that overlap an impact area's files/name. */
 function crossLinkFindings(
   area: { name: string; impactedFiles: string[] },
@@ -376,17 +383,20 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
     try {
       const llm = createLlmClient();
-      const schema = z.object({ explanation: z.string().min(1) });
       let usage: TokenUsage | undefined;
-      const result = await llm.completeJSON({
+      // Plain-text completion (not JSON): the explanation is a long multi-line
+      // Markdown string, which models often fail to escape inside JSON. Asking
+      // for the Markdown directly is far more reliable.
+      const raw = await llm.complete({
         operation: 'Explain Feature',
         onUsage: (u) => (usage = u),
         system:
-          'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Structure the answer with short labelled parts: "In simple terms" (1-2 sentences), "How it works" (a few plain steps), "Example" (a concrete walkthrough), and "Why it matters" (business value). Keep it concise and friendly. Return plain text (you may use simple markdown headings and bullets) in "explanation".',
-        prompt: `Explain this feature so everyone understands it:\n${parsed.data.description}\n\nReturn JSON: {"explanation":"..."}.`,
-        schema,
+          'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Format the answer as GitHub-flavored Markdown with these bold section labels, each on its own line and separated by a blank line: **In simple terms** (1-2 sentences), **How it works** (a few plain steps as a numbered list), **Example** (a concrete walkthrough), and **Why it matters** (business value, as bullet points). Keep it concise and friendly. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+        prompt: `Explain this feature so everyone understands it:\n${parsed.data.description}`,
       });
-      return { explanation: result.explanation, usage };
+      const explanation = stripCodeFence(raw);
+      if (!explanation) throw new Error('empty explanation from model');
+      return { explanation, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -455,17 +465,19 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
     try {
       const llm = createLlmClient();
-      const schema = z.object({ explanation: z.string().min(1) });
       let usage: TokenUsage | undefined;
-      const result = await llm.completeJSON({
+      // Plain-text completion (not JSON): a multi-line Markdown explanation is
+      // unreliable to round-trip through JSON, so ask for the Markdown directly.
+      const raw = await llm.complete({
         operation: 'testcases.explain',
         onUsage: (u) => (usage = u),
         system:
-          'You are a senior QA engineer. Explain a one-line manual test case clearly and practically for a tester. Format the answer as Markdown with these bold section labels, EACH ON ITS OWN LINE and separated by a blank line — use real newlines ("\\n"), never one run-on paragraph:\n\n**What it verifies**\n<1-2 sentences>\n\n**Preconditions**\n- <bullet>\n- <bullet>\n\n**Steps**\n1. <step>\n2. <step>\n\n**Expected Result**\n- <bullet or short sentence>\n\nKeep it concise. Return the Markdown string in "explanation".',
-        prompt: `Explain this test case:\n"${parsed.data.testcase}"\n\nReturn JSON: {"explanation":"..."}.`,
-        schema,
+          'You are a senior QA engineer. Explain a one-line manual test case clearly and practically for a tester. Format the answer as Markdown with these bold section labels, EACH ON ITS OWN LINE and separated by a blank line, never one run-on paragraph:\n\n**What it verifies**\n<1-2 sentences>\n\n**Preconditions**\n- <bullet>\n- <bullet>\n\n**Steps**\n1. <step>\n2. <step>\n\n**Expected Result**\n- <bullet or short sentence>\n\nKeep it concise. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+        prompt: `Explain this test case:\n"${parsed.data.testcase}"`,
       });
-      return { explanation: result.explanation, usage };
+      const explanation = stripCodeFence(raw);
+      if (!explanation) throw new Error('empty explanation from model');
+      return { explanation, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
