@@ -38,7 +38,23 @@ every module emits — that's what enables cross-pillar correlation.
 
 - Node 20 LTS or newer (developed on Node 24)
 - pnpm 10+ (`corepack enable` picks up the pinned version)
-- Docker (for local Postgres + Redis) — required from Phase 1 onward
+- Docker (for local Postgres + Redis) — required from Phase 1 onward. Lets
+  you run the database and cache in ready-made containers instead of
+  installing Postgres/Redis by hand. If you don't have it yet:
+  - **macOS**: download **Docker Desktop** from
+    [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+    (pick the Apple Silicon or Intel chip build to match your Mac), install
+    it, then open the **Docker** app once from Spotlight/Launchpad and leave
+    it running in the background (look for the whale icon in the menu bar).
+  - **Windows**: install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+    (accept the WSL2 prompt if shown), then launch it once and leave it
+    running in the background.
+  - **Linux**: install the Docker Engine + Compose plugin for your distro,
+    e.g. on Ubuntu/Debian: `curl -fsSL https://get.docker.com | sh` then
+    `sudo usermod -aG docker $USER` (log out/in for this to take effect).
+
+  Verify with `docker --version && docker compose version` — both should
+  print a version number.
 
 ## Setup
 
