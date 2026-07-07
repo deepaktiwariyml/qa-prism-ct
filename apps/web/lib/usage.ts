@@ -47,6 +47,7 @@ export function operationLabel(op: string): string {
     'testcases.fill-columns': 'Fill columns',
     'testcases.combine': 'Combine test cases',
     'testcases.explain': 'Explain test case',
+    'testcases.explain-feature': 'Explain Feature',
     'impact.analyze': 'PR impact analysis',
     'fun.words': 'Fun word game',
     'scan.login-detect': 'Scan login detection',
