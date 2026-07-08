@@ -15,12 +15,17 @@ const NAV = [
 export function SiteHeader({
   authed = false,
   funEnabled = false,
+  desktop = false,
 }: {
   authed?: boolean;
   funEnabled?: boolean;
+  desktop?: boolean;
 }) {
   const pathname = usePathname();
-  const nav = funEnabled ? [...NAV, { href: '/fun', label: '🎮 Fun' }] : NAV;
+  // The desktop build excludes Website Scans (no DB/Redis/Chromium), so drop
+  // that nav entry there.
+  const base = desktop ? NAV.filter((n) => n.href !== '/dashboard') : NAV;
+  const nav = funEnabled ? [...base, { href: '/fun', label: '🎮 Fun' }] : base;
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -59,7 +64,7 @@ export function SiteHeader({
           })}
         </nav>
         <div className="flex shrink-0 items-center gap-1">
-          {authed ? (
+          {desktop ? null : authed ? (
             <button
               onClick={logout}
               className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900"

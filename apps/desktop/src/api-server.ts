@@ -1,0 +1,204 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
+import { z } from 'zod';
+import { SelectionSchema } from '@qa-prism/core';
+import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
+import { analyzePr } from '@qa-prism/impact-analyser';
+import { createLlmClient, setUsageRecorder, type TokenUsage } from '@qa-prism/llm';
+import { UsageStore } from './usage-store.js';
+
+const FAST_MODEL = () => process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+
+const TestCasesBody = z.object({
+  description: z.string().min(3).max(20_000),
+  context: z.string().max(200).optional(),
+});
+const FillColumnsBody = z.object({
+  testcases: z.array(z.string().min(1)).min(1).max(200),
+  columns: z.array(z.string().min(1)).min(1).max(12),
+});
+const CombineBody = z.object({ testcases: z.array(z.string().min(1)).min(2).max(25) });
+const ExplainBody = z.object({ testcase: z.string().min(1).max(2000) });
+const ImpactBody = z.object({ prUrl: z.string().min(1), githubToken: z.string().optional() });
+
+/**
+ * The desktop app's local API — the LLM-powered subset of the QA Prism server,
+ * with NO database, Redis, or headless browser. Token usage is written to a
+ * local JSON file instead of Postgres. The Anthropic key and other settings
+ * are read from process.env, which the Electron main process populates from
+ * the user's saved Settings before this server starts.
+ */
+export function buildDesktopApi(usageFile: string): FastifyInstance {
+  const app = Fastify({ logger: false });
+  const usage = new UsageStore(usageFile);
+
+  // Every Claude call flows through this recorder (retries included).
+  setUsageRecorder((u: TokenUsage) => usage.record(u));
+
+  void app.register(cors, { origin: true });
+
+  app.get('/health', async () => ({ ok: true, key: Boolean(process.env.ANTHROPIC_API_KEY) }));
+
+  // --- Test case generator -------------------------------------------------
+  app.post('/testcases/generate', async (req, reply) => {
+    const parsed = TestCasesBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const { description, context } = parsed.data;
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({
+        testcases: z
+          .array(z.object({ title: z.string().min(1), type: z.enum(['positive', 'negative', 'edge']) }))
+          .min(1)
+          .max(200),
+      });
+      let u: TokenUsage | undefined;
+      const result = await llm.completeJSON({
+        operation: 'testcases.generate',
+        onUsage: (x) => (u = x),
+        system:
+          'You are a senior QA engineer. Given a feature or requirement, produce a COMPREHENSIVE set of clear, ONE-LINE manual test cases a tester can execute — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). Each title is a single concise sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states). Cover all three thoroughly.',
+        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
+        schema,
+      });
+      const testcases = result.testcases
+        .map((t) => ({ title: t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: t.type }))
+        .filter((t) => t.title.length > 0)
+        .slice(0, 200);
+      return { testcases, usage: u };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post('/testcases/columns', async (req, reply) => {
+    const parsed = FillColumnsBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const { testcases, columns } = parsed.data;
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ rows: z.array(z.array(z.string())) });
+      const numbered = testcases.map((t, i) => `${i + 1}. ${t}`).join('\n');
+      let u: TokenUsage | undefined;
+      const result = await llm.completeJSON({
+        model: FAST_MODEL(),
+        operation: 'testcases.fill-columns',
+        onUsage: (x) => (u = x),
+        system:
+          'You are a senior QA engineer filling in a test-case table. For each test case (a fixed one-line title you must NOT change or restate) and each requested column, produce a concise, useful cell value inferred from the column name (e.g. "Priority" -> High/Medium/Low; "Preconditions", "Test Steps", "Expected Result", "Test Data" -> a short phrase or sentence). Return JSON with a `rows` matrix where rows[i] is the array of cell values for test case i, one value per column in the exact given order.',
+        prompt: `Columns (in order): ${JSON.stringify(columns)}\n\nTest cases:\n${numbered}\n\nReturn JSON: {"rows":[["col1 value","col2 value", ...], ...]} with exactly ${testcases.length} rows and ${columns.length} values each.`,
+        schema,
+      });
+      const rows = testcases.map((_, i) => {
+        const row = result.rows[i] ?? [];
+        return columns.map((__, j) => String(row[j] ?? ''));
+      });
+      return { rows, usage: u };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post('/testcases/combine', async (req, reply) => {
+    const parsed = CombineBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ title: z.string().min(1), type: z.enum(['positive', 'negative', 'edge']) });
+      let u: TokenUsage | undefined;
+      const result = await llm.completeJSON({
+        operation: 'testcases.combine',
+        onUsage: (x) => (u = x),
+        system:
+          'You are a senior QA engineer. Merge the given manual test cases into ONE coherent, concise one-line test case that preserves their combined intent and important checks. Imperative, no numbering. Classify it as positive, negative, or edge.',
+        prompt: `Combine these test cases into one:\n${parsed.data.testcases.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn JSON: {"title":"...","type":"positive|negative|edge"}.`,
+        schema,
+      });
+      return { title: result.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: result.type, usage: u };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post('/testcases/explain', async (req, reply) => {
+    const parsed = ExplainBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    try {
+      const llm = createLlmClient();
+      const schema = z.object({ explanation: z.string().min(1) });
+      let u: TokenUsage | undefined;
+      const result = await llm.completeJSON({
+        operation: 'testcases.explain',
+        onUsage: (x) => (u = x),
+        system:
+          'You are a senior QA engineer. Given a one-line manual test case, explain it clearly and practically for a tester: what it verifies, any preconditions, the steps to execute, and the expected result. Keep it concise and well-structured (a short paragraph or a few labelled lines). Return plain text in "explanation".',
+        prompt: `Explain this test case:\n"${parsed.data.testcase}"\n\nReturn JSON: {"explanation":"..."}.`,
+        schema,
+      });
+      return { explanation: result.explanation, usage: u };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // --- Framework generator -------------------------------------------------
+  app.get('/generator/cells', async () => {
+    const index = await loadRegistry();
+    return index.cells;
+  });
+  app.post('/generator/generate', async (req, reply) => {
+    const parsed = SelectionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid selection', issues: parsed.error.issues });
+    }
+    const result = await generate(parsed.data);
+    if (!result.matched || !result.outDir || !result.rootName) {
+      return reply.code(422).send({ error: result.reason ?? 'no matching stack cell' });
+    }
+    const zip = await zipDir(result.outDir, result.rootName);
+    reply.header('Content-Type', 'application/zip');
+    reply.header('Content-Disposition', `attachment; filename="${result.rootName}.zip"`);
+    return reply.send(zip);
+  });
+
+  // --- PR impact analyser (no DB persistence / finding cross-linking) ------
+  app.post('/impact', async (req, reply) => {
+    const parsed = ImpactBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    const githubToken = parsed.data.githubToken || process.env.GITHUB_TOKEN;
+    try {
+      const result = await analyzePr({ prUrl: parsed.data.prUrl, githubToken });
+      const analysis = {
+        ...result.analysis,
+        whatsImpacted: {
+          ...result.analysis.whatsImpacted,
+          areas: result.analysis.whatsImpacted.areas.map((a) => ({ ...a, relatedFindingIds: [] as string[] })),
+        },
+      };
+      return {
+        id: `${result.owner}-${result.repo}-${result.prNumber}`,
+        prUrl: parsed.data.prUrl,
+        prNumber: result.prNumber,
+        repo: `${result.owner}/${result.repo}`,
+        title: result.title,
+        tickets: result.tickets,
+        analysis,
+        changedFiles: result.changedFiles,
+        limitations: result.limitations,
+        usage: result.usage,
+      };
+    } catch (err) {
+      return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // --- Usage / consumption -------------------------------------------------
+  app.get('/usage', async (req) => {
+    const q = req.query as { limit?: string; offset?: string };
+    const limit = Math.min(Math.max(Number(q.limit) || 10, 1), 60);
+    const offset = Math.max(Number(q.offset) || 0, 0);
+    return usage.query(limit, offset);
+  });
+
+  return app;
+}

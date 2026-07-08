@@ -10,6 +10,12 @@ import { COOKIE_NAME, sessionToken } from '@/lib/auth';
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Desktop app: the UI runs locally for a single user — no shared-password
+  // gate. Enabled by the Electron host, never in the hosted deployment.
+  if (process.env.DESKTOP_MODE === '1') {
+    return NextResponse.next();
+  }
+
   if (pathname === '/login' || pathname.startsWith('/api/auth/')) {
     return NextResponse.next();
   }

@@ -17,13 +17,15 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const password = process.env.APP_PASSWORD;
   const cookie = cookies().get(COOKIE_NAME)?.value;
-  const authed = Boolean(password) && cookie === (await sessionToken(password!));
+  // Desktop app runs locally with no login — always treat as authed there.
+  const desktop = process.env.DESKTOP_MODE === '1';
+  const authed = desktop || (Boolean(password) && cookie === (await sessionToken(password!)));
   const funEnabled = process.env.FUN_ENABLED === 'true';
 
   return (
     <html lang="en" className={inter.variable}>
       <body className="flex min-h-screen flex-col bg-white text-slate-900 antialiased">
-        <SiteHeader authed={authed} funEnabled={funEnabled} />
+        <SiteHeader authed={authed} funEnabled={funEnabled} desktop={desktop} />
         <div className="flex-1">{children}</div>
         <SiteFooter authed={authed} />
       </body>

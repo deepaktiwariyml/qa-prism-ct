@@ -32,7 +32,9 @@
       "esbuild",
       "prisma",
       "@prisma/client",
-      "@prisma/engines"
+      "@prisma/engines",
+      "electron",
+      "electron-winstaller"
     ],
     "overrides": {
       "ioredis": "5.11.1"

@@ -1,0 +1,46 @@
+{
+  "name": "@qa-prism/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "description": "QA Prism desktop app (Electron) — LLM-powered QA tools.",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.json",
+    "build:web": "cross-env NEXT_STANDALONE=1 pnpm --filter @qa-prism/web build && node scripts/assemble-web.mjs",
+    "build:web:dev": "pnpm --filter @qa-prism/web build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "pnpm run build:main && pnpm run build:web:dev && electron .",
+    "start": "electron .",
+    "dist:mac": "pnpm run build:main && pnpm run build:web && electron-builder --mac"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@qa-prism/core": "workspace:*",
+    "@qa-prism/generator": "workspace:*",
+    "@qa-prism/impact-analyser": "workspace:*",
+    "@qa-prism/llm": "workspace:*",
+    "fastify": "^5.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.2"
+  },
+  "build": {
+    "appId": "com.codeandtheory.qaprism",
+    "productName": "QA Prism",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "preload.cjs", "settings.html", "package.json"],
+    "extraResources": [{ "from": "build-web", "to": "web" }],
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "QA-Prism-${version}-${arch}.${ext}"
+    },
+    "dmg": { "title": "QA Prism ${version}" }
+  }
+}

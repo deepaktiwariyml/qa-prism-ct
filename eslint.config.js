@@ -15,6 +15,9 @@ export default tseslint.config(
       // Generator template assets — rendered output, not workspace source.
       'packages/generator/registry/**',
       'packages/generator/partials/**',
+      // Electron desktop app (mixed ESM/CJS + Node/Electron globals) — it is
+      // type-checked by its own strict tsconfig instead of the root ESLint.
+      'apps/desktop/**',
     ],
   },
   js.configs.recommended,
@@ -23,6 +26,13 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
+    },
+  },
+  {
+    // Build/config scripts run in Node and may reference Node globals.
+    files: ['**/*.config.{js,mjs,cjs}'],
+    languageOptions: {
+      globals: { process: 'readonly', __dirname: 'readonly', module: 'writable', require: 'readonly' },
     },
   },
 );

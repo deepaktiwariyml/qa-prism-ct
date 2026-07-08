@@ -1,0 +1,4 @@
+dist/
+release/
+build-web/
+node_modules/
