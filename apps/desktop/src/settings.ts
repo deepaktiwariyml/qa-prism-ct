@@ -14,6 +14,13 @@ export interface Settings {
   anthropicFastModel: string;
   githubToken: string;
   jiraBaseUrl: string;
+  jiraEmail: string;
+  jiraApiToken: string;
+  // Per-operation system-prompt overrides, keyed by SYSTEM_PROMPTS[].key.
+  // Not secret — stored in the clear. Blank/absent = use the canonical default.
+  systemPrompts: Record<string, string>;
+  // Feature flag: gate the (experimental) "What's Broken" feature. Off by default.
+  whatsBrokenEnabled: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -22,15 +29,23 @@ const DEFAULTS: Settings = {
   anthropicFastModel: 'claude-haiku-4-5',
   githubToken: '',
   jiraBaseUrl: '',
+  jiraEmail: '',
+  jiraApiToken: '',
+  systemPrompts: {},
+  whatsBrokenEnabled: false,
 };
 
 interface StoredShape {
   anthropicModel?: string;
   anthropicFastModel?: string;
   jiraBaseUrl?: string;
+  jiraEmail?: string;
+  systemPrompts?: Record<string, string>;
+  whatsBrokenEnabled?: boolean;
   // secrets stored as base64 ciphertext (safeStorage) or '' when unset
   anthropicApiKeyEnc?: string;
   githubTokenEnc?: string;
+  jiraApiTokenEnc?: string;
 }
 
 function settingsPath(): string {
@@ -71,6 +86,11 @@ export function loadSettings(): Settings {
       anthropicFastModel: raw.anthropicFastModel || DEFAULTS.anthropicFastModel,
       githubToken: decrypt(raw.githubTokenEnc),
       jiraBaseUrl: raw.jiraBaseUrl || '',
+      jiraEmail: raw.jiraEmail || '',
+      jiraApiToken: decrypt(raw.jiraApiTokenEnc),
+      systemPrompts:
+        raw.systemPrompts && typeof raw.systemPrompts === 'object' ? { ...raw.systemPrompts } : {},
+      whatsBrokenEnabled: raw.whatsBrokenEnabled === true,
     };
   } catch {
     return { ...DEFAULTS };
@@ -78,12 +98,21 @@ export function loadSettings(): Settings {
 }
 
 export function saveSettings(next: Settings): void {
+  // Keep only non-empty overrides so a cleared field reverts to the default.
+  const prompts: Record<string, string> = {};
+  for (const [k, v] of Object.entries(next.systemPrompts ?? {})) {
+    if (typeof v === 'string' && v.trim()) prompts[k] = v;
+  }
   const stored: StoredShape = {
     anthropicModel: next.anthropicModel || DEFAULTS.anthropicModel,
     anthropicFastModel: next.anthropicFastModel || DEFAULTS.anthropicFastModel,
     jiraBaseUrl: next.jiraBaseUrl || '',
+    jiraEmail: next.jiraEmail || '',
+    systemPrompts: prompts,
+    whatsBrokenEnabled: Boolean(next.whatsBrokenEnabled),
     anthropicApiKeyEnc: encrypt(next.anthropicApiKey),
     githubTokenEnc: encrypt(next.githubToken),
+    jiraApiTokenEnc: encrypt(next.jiraApiToken),
   };
   const dir = app.getPath('userData');
   mkdirSync(dir, { recursive: true });
@@ -99,6 +128,10 @@ export function settingsToEnv(s: Settings): Record<string, string> {
   if (s.anthropicApiKey) env.ANTHROPIC_API_KEY = s.anthropicApiKey;
   if (s.githubToken) env.GITHUB_TOKEN = s.githubToken;
   if (s.jiraBaseUrl) env.JIRA_BASE_URL = s.jiraBaseUrl;
+  if (s.jiraEmail) env.JIRA_EMAIL = s.jiraEmail;
+  if (s.jiraApiToken) env.JIRA_API_TOKEN = s.jiraApiToken;
+  // Always set explicitly ('1'/'0') so toggling off overwrites a prior '1'.
+  env.WHATS_BROKEN_ENABLED = s.whatsBrokenEnabled ? '1' : '0';
   return env;
 }
 

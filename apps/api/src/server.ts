@@ -5,10 +5,12 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
+import { analyzeBreakage, BreakageInputSchema } from '@qa-prism/breakage-analyser';
 import {
   createLlmClient,
   setUsageRecorder,
-  DEFAULT_TESTCASE_SYSTEM,
+  resolveSystemPrompt,
+  SYSTEM_PROMPTS,
   type TokenUsage,
 } from '@qa-prism/llm';
 import { buildHtmlReport, type ReportScan } from './report.js';
@@ -37,6 +39,9 @@ const TestCasesBody = z.object({
 const ExplainFeatureBody = z.object({
   description: z.string().min(3).max(20_000),
 });
+
+const JiraImportBody = z.object({ ticket: z.string().min(1).max(300) });
+const JiraSearchBody = z.object({ query: z.string().max(200) });
 
 const FillColumnsBody = z.object({
   testcases: z.array(z.string().min(1)).min(1).max(200),
@@ -82,6 +87,77 @@ function stripCodeFence(s: string): string {
   const t = s.trim();
   const m = t.match(/^```[^\n]*\n([\s\S]*?)\n?```$/);
   return (m ? m[1]! : t).trim();
+}
+
+/** Pull a Jira issue key (e.g. ABC-123) out of a raw key or a ticket URL. */
+function extractJiraKey(input: string): string {
+  const m = input.match(/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  return m ? m[1]!.toUpperCase() : '';
+}
+
+/**
+ * Typeahead search for Jira issues via the issue-picker endpoint (matches on
+ * key or summary text). Returns [] and never throws when Jira isn't configured
+ * or the query is empty, so the UI degrades gracefully to a plain key field.
+ */
+async function searchJiraTickets(query: string): Promise<Array<{ key: string; summary: string }>> {
+  const base = (process.env.JIRA_BASE_URL || '').replace(/\/+$/, '');
+  const email = process.env.JIRA_EMAIL || '';
+  const token = process.env.JIRA_API_TOKEN || '';
+  const q = query.trim();
+  if (!base || !email || !token || !q) return [];
+  const auth = Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${base}/rest/api/3/issue/picker?query=${encodeURIComponent(q)}&showSubTasks=true&showSubTaskParent=true`;
+  const res = await fetch(url, { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    sections?: Array<{ issues?: Array<{ key?: string; summaryText?: string; summary?: string }> }>;
+  };
+  const seen = new Set<string>();
+  const out: Array<{ key: string; summary: string }> = [];
+  for (const section of data.sections ?? []) {
+    for (const issue of section.issues ?? []) {
+      const key = issue.key ?? '';
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, summary: issue.summaryText ?? issue.summary ?? '' });
+      if (out.length >= 15) return out;
+    }
+  }
+  return out;
+}
+
+/** Minimal HTML→text for Jira rendered descriptions. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+interface AdfNode {
+  type?: string;
+  text?: string;
+  content?: AdfNode[];
+}
+
+/** Extract plain text from Atlassian Document Format (ADF) description JSON. */
+function adfToText(node: AdfNode | null | undefined): string {
+  if (!node || typeof node !== 'object') return '';
+  if (node.type === 'text' && typeof node.text === 'string') return node.text;
+  const inner = Array.isArray(node.content) ? node.content.map(adfToText).join('') : '';
+  const blocks = ['paragraph', 'heading', 'blockquote', 'codeBlock', 'listItem', 'rule'];
+  if (node.type && blocks.includes(node.type)) return `${inner}\n`;
+  return inner;
 }
 
 /** Attach existing-finding ids that overlap an impact area's files/name. */
@@ -235,6 +311,25 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   });
 
   // PR impact analyser (spec §6.5): fetch the diff, ask Claude for risk-ranked
+  // Runtime feature flags for the web app.
+  app.get('/flags', async () => ({ whatsBroken: process.env.WHATS_BROKEN_ENABLED === '1' }));
+
+  // "What's Broken": predict regressions/impacted tests from PRs + docs +
+  // test cases + Jira. Stateless (ephemeral) — no persistence. Gated by flag.
+  app.post('/breakage/analyze', async (req, reply) => {
+    if (process.env.WHATS_BROKEN_ENABLED !== '1') return reply.code(404).send({ error: 'not found' });
+    const parsed = BreakageInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
+    const githubToken = parsed.data.githubToken || process.env.GITHUB_TOKEN;
+    try {
+      return await analyzeBreakage({ ...parsed.data, githubToken });
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // areas, cross-link to existing findings, persist an ImpactReport.
   app.post('/impact', async (req, reply) => {
     const parsed = ImpactBody.safeParse(req.body);
@@ -331,7 +426,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     const parsed = TestCasesBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
     const { description, context } = parsed.data;
-    const system = parsed.data.system?.trim() || DEFAULT_TESTCASE_SYSTEM;
+    const system = parsed.data.system?.trim() || resolveSystemPrompt('testcases.generate');
     const bdd = parsed.data.format === 'bdd';
     try {
       const llm = createLlmClient();
@@ -375,7 +470,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
 
   // Return the default QA system prompt so the UI can show it as an editable,
   // overridable default (single source of truth).
-  app.get('/testcases/system-prompt', async () => ({ prompt: DEFAULT_TESTCASE_SYSTEM }));
+  app.get('/testcases/system-prompt', async () => ({ prompt: resolveSystemPrompt('testcases.generate') }));
 
   // Explain a feature in plain language for any audience (beginner → director).
   app.post('/testcases/explain-feature', async (req, reply) => {
@@ -390,8 +485,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const raw = await llm.complete({
         operation: 'Explain Feature',
         onUsage: (u) => (usage = u),
-        system:
-          'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Format the answer as GitHub-flavored Markdown with these bold section labels, each on its own line and separated by a blank line: **In simple terms** (1-2 sentences), **How it works** (a few plain steps as a numbered list), **Example** (a concrete walkthrough), and **Why it matters** (business value, as bullet points). Keep it concise and friendly. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+        system: resolveSystemPrompt('testcases.explain-feature'),
         prompt: `Explain this feature so everyone understands it:\n${parsed.data.description}`,
       });
       const explanation = stripCodeFence(raw);
@@ -401,6 +495,60 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
+
+  // Import a Jira ticket's summary + description to seed a test-case prompt.
+  app.post('/testcases/jira-import', async (req, reply) => {
+    const parsed = JiraImportBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const base = (process.env.JIRA_BASE_URL || '').replace(/\/+$/, '');
+    const email = process.env.JIRA_EMAIL || '';
+    const token = process.env.JIRA_API_TOKEN || '';
+    if (!base || !email || !token) {
+      return reply
+        .code(400)
+        .send({ error: 'Jira is not configured. Set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN.' });
+    }
+    const key = extractJiraKey(parsed.data.ticket);
+    if (!key) return reply.code(400).send({ error: 'Enter a Jira ticket key (e.g. ABC-123) or a ticket URL.' });
+    try {
+      const auth = Buffer.from(`${email}:${token}`).toString('base64');
+      const url = `${base}/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description&expand=renderedFields`;
+      const res = await fetch(url, { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } });
+      if (res.status === 401 || res.status === 403) {
+        return reply.code(400).send({ error: 'Jira authentication failed — check the email and API token.' });
+      }
+      if (res.status === 404) return reply.code(404).send({ error: `Jira ticket ${key} not found (or no access).` });
+      if (!res.ok) return reply.code(502).send({ error: `Jira returned ${res.status}.` });
+      const data = (await res.json()) as {
+        fields?: { summary?: string; description?: AdfNode | null };
+        renderedFields?: { description?: string };
+      };
+      // Prefer the server-rendered HTML; fall back to walking the ADF description.
+      let description = htmlToText(data.renderedFields?.description ?? '');
+      if (!description && data.fields?.description) description = adfToText(data.fields.description).trim();
+      return { key, summary: data.fields?.summary ?? '', description };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Typeahead: matching Jira issues as the user types a key or text.
+  app.post('/testcases/jira-search', async (req, reply) => {
+    const parsed = JiraSearchBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    return { results: await searchJiraTickets(parsed.data.query) };
+  });
+
+  // Canonical system prompts behind every LLM call — read-only reference
+  // (defaults only, never the user's runtime overrides).
+  app.get('/prompts', async () => ({
+    prompts: SYSTEM_PROMPTS.map((p) => ({
+      key: p.key,
+      label: p.label,
+      description: p.description,
+      prompt: p.default,
+    })),
+  }));
 
   // Fill user-defined columns for existing test cases via the LLM. The test
   // case titles are inputs only — they are never changed. Returns a matrix
@@ -418,8 +566,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
         model: FAST_MODEL,
         operation: 'testcases.fill-columns',
         onUsage: (u) => (usage = u),
-        system:
-          'You are a senior QA engineer filling in a test-case table. For each test case (a fixed one-line title you must NOT change or restate) and each requested column, produce a concise, useful cell value inferred from the column name (e.g. "Priority" -> High/Medium/Low; "Preconditions", "Test Steps", "Expected Result", "Test Data" -> a short phrase or sentence). Return JSON with a `rows` matrix where rows[i] is the array of cell values for test case i, one value per column in the exact given order.',
+        system: resolveSystemPrompt('testcases.fill-columns'),
         prompt: `Columns (in order): ${JSON.stringify(columns)}\n\nTest cases:\n${numbered}\n\nReturn JSON: {"rows":[["col1 value","col2 value", ...], ...]} with exactly ${testcases.length} rows and ${columns.length} values each.`,
         schema,
       });
@@ -448,8 +595,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const result = await llm.completeJSON({
         operation: 'testcases.combine',
         onUsage: (u) => (usage = u),
-        system:
-          'You are a senior QA engineer. Merge the given manual test cases into ONE coherent, concise one-line test case that preserves their combined intent and important checks. Imperative, no numbering. Classify it as positive, negative, or edge.',
+        system: resolveSystemPrompt('testcases.combine'),
         prompt: `Combine these test cases into one:\n${parsed.data.testcases.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn JSON: {"title":"...","type":"positive|negative|edge"}.`,
         schema,
       });
@@ -471,8 +617,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const raw = await llm.complete({
         operation: 'testcases.explain',
         onUsage: (u) => (usage = u),
-        system:
-          'You are a senior QA engineer. Explain a one-line manual test case clearly and practically for a tester. Format the answer as Markdown with these bold section labels, EACH ON ITS OWN LINE and separated by a blank line, never one run-on paragraph:\n\n**What it verifies**\n<1-2 sentences>\n\n**Preconditions**\n- <bullet>\n- <bullet>\n\n**Steps**\n1. <step>\n2. <step>\n\n**Expected Result**\n- <bullet or short sentence>\n\nKeep it concise. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+        system: resolveSystemPrompt('testcases.explain'),
         prompt: `Explain this test case:\n"${parsed.data.testcase}"`,
       });
       const explanation = stripCodeFence(raw);

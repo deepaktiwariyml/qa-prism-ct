@@ -24,9 +24,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en" className={inter.variable}>
-      <body className="flex min-h-screen flex-col bg-white text-slate-900 antialiased">
+      <body
+        className={`flex min-h-screen flex-col bg-white text-slate-900 antialiased ${
+          // Desktop runs full-width: a CSS rule drops the per-page max-width caps.
+          desktop ? 'app-desktop' : ''
+        }`}
+      >
         <SiteHeader authed={authed} funEnabled={funEnabled} desktop={desktop} />
-        <div className="flex-1">{children}</div>
+        <div className="page-shell flex-1">{children}</div>
         <SiteFooter authed={authed} desktop={desktop} />
       </body>
     </html>

@@ -21,3 +21,4 @@ pnpm-debug.log*
 
 # standalone generator prototype uses npm locally; ported to pnpm in Phase 6
 generator/package-lock.json
+apps/web/public/pdf.worker.min.mjs

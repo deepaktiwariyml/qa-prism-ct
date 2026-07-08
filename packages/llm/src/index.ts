@@ -17,3 +17,10 @@ export { priceFor, costOf } from './pricing.js';
 export type { ModelPrice } from './pricing.js';
 export { IMPACT_ANALYSIS_SYSTEM, buildImpactAnalysisPrompt } from './prompts/impact-analysis.js';
 export { DEFAULT_TESTCASE_SYSTEM } from './prompts/testcase-system.js';
+export {
+  SYSTEM_PROMPTS,
+  resolveSystemPrompt,
+  setSystemPromptOverrides,
+  getSystemPromptOverrides,
+} from './prompts/registry.js';
+export type { SystemPromptDef } from './prompts/registry.js';

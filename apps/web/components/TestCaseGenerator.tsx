@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { UsageChip } from '@/components/UsageChip';
 import { Markdown } from '@/components/Markdown';
@@ -76,45 +76,127 @@ export function TestCaseGenerator() {
   const [copied, setCopied] = useState(false);
   const [usage, setUsage] = useState<CallUsage | null>(null);
   const [bdd, setBdd] = usePersistentState('qa-prism:tc:bdd', false);
-  // System-prompt override: '' means "use the server default".
-  const [systemPrompt, setSystemPrompt] = usePersistentState('qa-prism:tc:system', '');
+  // System-prompt override: '' means "use the server default". The key is
+  // versioned (:v2) so older builds that prefilled this field with a full copy
+  // of the default don't shadow the current default from Settings.
+  const [systemPrompt, setSystemPrompt] = usePersistentState('qa-prism:tc:system:v2', '');
+  // The current effective default from the server (reflects Settings overrides).
+  // Not persisted — always refetched so it stays in sync with Settings.
+  const [systemDefault, setSystemDefault] = useState('');
   const [systemOpen, setSystemOpen] = useState(false);
   const [systemLoading, setSystemLoading] = useState(false);
   const [feature, setFeature] = useState<{ loading: boolean; content: string; error: string | null } | null>(
     null,
   );
   const [featureCopied, setFeatureCopied] = useState(false);
+  const [jiraOpen, setJiraOpen] = useState(false);
+  const [jiraTicket, setJiraTicket] = useState('');
+  const [jiraBusy, setJiraBusy] = useState(false);
+  const [jiraErr, setJiraErr] = useState<string | null>(null);
+  const [jiraResults, setJiraResults] = useState<Array<{ key: string; summary: string }>>([]);
+  const [jiraSearching, setJiraSearching] = useState(false);
+  // Set right after a pick/import so the follow-up value change doesn't re-open
+  // the dropdown for the value we just chose.
+  const jiraSuppress = useRef(false);
 
-  // Lazy-load the default system prompt into the editor the first time the
-  // Advanced panel is opened (and it hasn't been customised yet).
-  async function openSystemPanel() {
-    const next = !systemOpen;
-    setSystemOpen(next);
-    if (next && !systemPrompt.trim()) {
-      setSystemLoading(true);
+  // Debounced typeahead: query Jira for matching tickets as the user types.
+  useEffect(() => {
+    if (!jiraOpen) return;
+    const q = jiraTicket.trim();
+    if (jiraSuppress.current) {
+      jiraSuppress.current = false;
+      return;
+    }
+    if (q.length < 2) {
+      setJiraResults([]);
+      setJiraSearching(false);
+      return;
+    }
+    let alive = true;
+    setJiraSearching(true);
+    const t = setTimeout(async () => {
       try {
-        const res = await fetch('/api/testcases/system-prompt', { cache: 'no-store' });
+        const res = await fetch('/api/testcases/jira-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+        });
         const data = await res.json();
-        if (res.ok && data.prompt) setSystemPrompt(data.prompt as string);
+        if (alive) setJiraResults(Array.isArray(data.results) ? data.results : []);
       } catch {
-        /* leave empty — server falls back to its default on generate */
+        if (alive) setJiraResults([]);
       } finally {
-        setSystemLoading(false);
+        if (alive) setJiraSearching(false);
       }
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [jiraTicket, jiraOpen]);
+
+  async function importFromJira(ticket?: string) {
+    const key = (ticket ?? jiraTicket).trim();
+    if (!key) return;
+    setJiraBusy(true);
+    setJiraErr(null);
+    setJiraResults([]);
+    try {
+      const res = await fetch('/api/testcases/jira-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket: key }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      const summary = String(data.summary ?? '').trim();
+      const desc = String(data.description ?? '').trim();
+      const composed = [summary && `Feature: ${summary}`, desc].filter(Boolean).join('\n\n');
+      setDescription(composed || summary || desc);
+      setJiraOpen(false);
+      setJiraTicket('');
+    } catch (err) {
+      setJiraErr(String(err instanceof Error ? err.message : err));
+    } finally {
+      setJiraBusy(false);
     }
   }
 
-  async function resetSystemPrompt() {
+  function pickTicket(key: string) {
+    jiraSuppress.current = true;
+    setJiraTicket(key);
+    setJiraResults([]);
+    void importFromJira(key);
+  }
+
+  // Fetch the current effective default (which reflects any Settings override)
+  // whenever this component mounts — including after a Settings save reloads
+  // the window — so the editor always shows the up-to-date default.
+  const loadSystemDefault = useCallback(async () => {
     setSystemLoading(true);
     try {
       const res = await fetch('/api/testcases/system-prompt', { cache: 'no-store' });
       const data = await res.json();
-      if (res.ok && data.prompt) setSystemPrompt(data.prompt as string);
+      if (res.ok && data.prompt) setSystemDefault(data.prompt as string);
     } catch {
-      /* ignore */
+      /* leave empty — server falls back to its default on generate */
     } finally {
       setSystemLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    void loadSystemDefault();
+  }, [loadSystemDefault]);
+
+  function openSystemPanel() {
+    setSystemOpen((o) => !o);
+  }
+
+  // Revert to the default: clear the override and refresh the default text.
+  function resetSystemPrompt() {
+    setSystemPrompt('');
+    void loadSystemDefault();
   }
 
   async function explainFeature() {
@@ -556,11 +638,14 @@ export function TestCaseGenerator() {
           </button>
           <button
             type="button"
-            disabled
-            title="Jira import — coming soon (needs Atlassian setup)"
-            className="cursor-not-allowed rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-400"
+            onClick={() => {
+              setJiraErr(null);
+              setJiraOpen((o) => !o);
+            }}
+            title="Pull a Jira ticket's summary and description into the prompt"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
-            Import from Jira (soon)
+            Import from Jira
           </button>
           <button
             type="button"
@@ -572,6 +657,59 @@ export function TestCaseGenerator() {
             💡 Explain Feature
           </button>
         </div>
+
+        {jiraOpen && (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">
+              Jira ticket — search by key or title, or paste a URL
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={jiraTicket}
+                  onChange={(e) => setJiraTicket(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && importFromJira()}
+                  placeholder="Start typing — e.g. PROJ-1, “login page”, or a ticket URL"
+                  autoComplete="off"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                />
+                {(jiraSearching || jiraResults.length > 0) && (
+                  <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                    {jiraSearching && jiraResults.length === 0 && (
+                      <li className="px-3 py-2 text-sm text-slate-400">Searching…</li>
+                    )}
+                    {jiraResults.map((r) => (
+                      <li key={r.key}>
+                        <button
+                          type="button"
+                          onClick={() => pickTicket(r.key)}
+                          className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition hover:bg-indigo-50"
+                        >
+                          <span className="shrink-0 font-mono text-xs font-semibold text-indigo-600">{r.key}</span>
+                          <span className="truncate text-slate-600">{r.summary}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => importFromJira()}
+                disabled={jiraBusy || !jiraTicket.trim()}
+                className="shrink-0 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              >
+                {jiraBusy ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+            {jiraErr && <p className="mt-2 text-sm text-red-600">{jiraErr}</p>}
+            <p className="mt-2 text-xs text-slate-400">
+              Pulls the ticket’s summary and description into the prompt above. Set your Jira site
+              URL, email, and API token in Settings first.
+            </p>
+          </div>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
@@ -607,10 +745,10 @@ export function TestCaseGenerator() {
               </button>
             </div>
             <textarea
-              value={systemPrompt}
+              value={systemPrompt || systemDefault}
               onChange={(e) => setSystemPrompt(e.target.value)}
               rows={10}
-              placeholder={systemLoading ? 'Loading default…' : 'Leave blank to use the built-in QA-Bot V3 default.'}
+              placeholder={systemLoading ? 'Loading default…' : 'Leave blank to use the current default.'}
               className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 outline-none focus:border-indigo-500"
             />
             <p className="mt-1.5 text-xs text-slate-400">

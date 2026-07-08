@@ -17,7 +17,11 @@ export function SiteFooter({ authed = false, desktop = false }: { authed?: boole
       ];
   return (
     <footer className="mt-24 border-t border-slate-200 bg-slate-50">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        className={`mx-auto flex flex-col gap-4 px-6 py-10 sm:flex-row sm:items-center sm:justify-between ${
+          desktop ? 'max-w-none' : 'max-w-6xl'
+        }`}
+      >
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Logo className="h-5 w-5" />
           <span>
@@ -36,7 +40,10 @@ export function SiteFooter({ authed = false, desktop = false }: { authed?: boole
             </div>
           )}
           <span className="text-xs text-slate-400">
-            Developed by <span className="font-medium text-slate-600">Deepak Tiwari &amp; Vinoth Pandian</span>
+            Team behind this:{' '}
+            <span className="font-medium text-slate-600">
+              Deepak Tiwari, Vinoth Pandian, Darshan Keerthi, Manjunath Somashekar
+            </span>
           </span>
         </div>
       </div>

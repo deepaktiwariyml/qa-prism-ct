@@ -3,7 +3,7 @@ import { SeveritySchema } from '@qa-prism/core';
 import {
   buildImpactAnalysisPrompt,
   createLlmClient,
-  IMPACT_ANALYSIS_SYSTEM,
+  resolveSystemPrompt,
   type LlmClient,
   type TokenUsage,
 } from '@qa-prism/llm';
@@ -132,7 +132,7 @@ export async function analyzePr(input: AnalyzeInput, deps: AnalyzeDeps = {}): Pr
 
   let usage: TokenUsage | undefined;
   const result = await llm.completeJSON({
-    system: IMPACT_ANALYSIS_SYSTEM,
+    system: resolveSystemPrompt('impact.analyze'),
     prompt,
     schema: AnalysisSchema,
     operation: 'impact.analyze',
