@@ -15,7 +15,103 @@ const FLOW = [
   { step: '04', title: 'Act', body: 'Generate a manual test plan, scaffold a framework, analyse a PR’s blast radius, and push findings to your tracker.' },
 ];
 
+/** The tools available in the desktop build (LLM-powered, no scanners). */
+const DESKTOP_TOOLS = [
+  {
+    href: '/testcases',
+    emoji: '📝',
+    name: 'Test Cases',
+    desc: 'Turn a feature or requirement into a comprehensive, review-ready set of manual test cases — or Gherkin scenarios.',
+    accent: 'from-rose-500 to-pink-500',
+  },
+  {
+    href: '/impact',
+    emoji: '🔍',
+    name: 'Impact Analyser',
+    desc: 'Paste a pull request and get a plain-language read on what changed, what it touches, and what to test.',
+    accent: 'from-violet-500 to-indigo-500',
+  },
+  {
+    href: '/generator',
+    emoji: '⚙️',
+    name: 'Framework Generator',
+    desc: 'Pick a stack and download a runnable automation framework — or clone the shared one.',
+    accent: 'from-cyan-500 to-blue-500',
+  },
+  {
+    href: '/consumption',
+    emoji: '💰',
+    name: 'Usage',
+    desc: 'See exactly how many tokens each AI call used and what it cost, day by day.',
+    accent: 'from-emerald-500 to-teal-500',
+  },
+];
+
+function DesktopLanding() {
+  return (
+    <div className="mx-auto max-w-5xl px-6 py-16">
+      <section className="text-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Your AI QA copilot — on your machine
+        </span>
+        <h1 className="mx-auto mt-6 max-w-2xl text-4xl font-semibold leading-tight tracking-tight text-slate-900">
+          Better testing,{' '}
+          <span className="bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
+            in a few clicks
+          </span>
+          .
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-slate-600">
+          Write test cases, understand what a pull request really changes, and scaffold automation
+          frameworks — powered by Claude, running locally with your own key.
+        </p>
+        <div className="mt-7 flex items-center justify-center gap-3">
+          <Link
+            href="/testcases"
+            className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+          >
+            Generate test cases
+          </Link>
+          <Link
+            href="/impact"
+            className="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Analyse a PR
+          </Link>
+        </div>
+      </section>
+
+      <section className="mt-14 grid gap-4 sm:grid-cols-2">
+        {DESKTOP_TOOLS.map((t) => (
+          <Link
+            key={t.href}
+            href={t.href}
+            className="group rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-indigo-300 hover:shadow-sm"
+          >
+            <div className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${t.accent} text-lg`}>
+              <span>{t.emoji}</span>
+            </div>
+            <h3 className="mt-4 text-base font-semibold text-slate-900">{t.name}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{t.desc}</p>
+            <span className="mt-4 inline-block text-sm font-medium text-indigo-600 group-hover:underline">
+              Open →
+            </span>
+          </Link>
+        ))}
+      </section>
+
+      <p className="mt-10 text-center text-sm text-slate-400">
+        Set your Anthropic API key anytime from{' '}
+        <span className="font-medium text-slate-500">Settings</span> (top-right, or ⌘,).
+      </p>
+    </div>
+  );
+}
+
 export default function Landing() {
+  if (process.env.DESKTOP_MODE === '1') return <DesktopLanding />;
+
   return (
     <div>
       {/* Hero */}

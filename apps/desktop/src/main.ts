@@ -106,7 +106,11 @@ function createMainWindow(): void {
     backgroundColor: '#0b1020',
     titleBarStyle: 'hiddenInset',
     show: false,
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      preload: join(__dirname, '..', 'main-preload.cjs'),
+    },
   });
   void mainWindow.loadURL(`http://127.0.0.1:${webPort}`);
   mainWindow.once('ready-to-show', () => mainWindow?.show());
@@ -178,6 +182,7 @@ function buildMenu(): void {
 }
 
 // --- IPC for the Settings window ------------------------------------------
+ipcMain.on('settings:open', () => openSettingsWindow());
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:save', (_e, next: Settings) => {
   saveSettings(next);

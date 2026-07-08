@@ -34,7 +34,7 @@
     "appId": "com.codeandtheory.qaprism",
     "productName": "QA Prism",
     "directories": { "output": "release" },
-    "files": ["dist/**/*", "preload.cjs", "settings.html", "package.json"],
+    "files": ["dist/**/*", "preload.cjs", "main-preload.cjs", "settings.html", "package.json"],
     "extraResources": [{ "from": "build-web", "to": "web" }],
     "mac": {
       "target": ["dmg", "zip"],
