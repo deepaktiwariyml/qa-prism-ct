@@ -8,10 +8,17 @@ import { dirname, join } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const pkg = require.resolve('pdfjs-dist/package.json');
-const buildDir = join(dirname(pkg), 'build');
-const src = existsSync(join(buildDir, 'pdf.worker.min.mjs'))
-  ? join(buildDir, 'pdf.worker.min.mjs')
-  : join(buildDir, 'pdf.worker.mjs');
+// Ship the LEGACY worker to match lib/parseDocs.ts (legacy build has the
+// polyfills Electron's Chromium needs). Fall back to the standard build.
+const root = dirname(pkg);
+const candidates = [
+  join(root, 'legacy', 'build', 'pdf.worker.min.mjs'),
+  join(root, 'legacy', 'build', 'pdf.worker.mjs'),
+  join(root, 'build', 'pdf.worker.min.mjs'),
+  join(root, 'build', 'pdf.worker.mjs'),
+];
+const src = candidates.find((p) => existsSync(p));
+if (!src) throw new Error('[copy-pdf-worker] no pdf.worker file found in pdfjs-dist');
 
 const publicDir = join(process.cwd(), 'public');
 mkdirSync(publicDir, { recursive: true });

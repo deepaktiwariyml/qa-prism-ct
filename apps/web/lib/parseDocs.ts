@@ -61,11 +61,14 @@ function parseJson(name: string, raw: string): ParsedDoc {
 }
 
 async function parsePdf(file: File): Promise<ParsedDoc> {
-  const pdfjs = await import('pdfjs-dist');
+  // Use the "legacy" build: it polyfills modern JS (e.g. Uint8Array.toHex) that
+  // Electron's older Chromium lacks — the non-legacy build throws
+  // "a.toHex is not a function" there.
+  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as typeof import('pdfjs-dist');
   // The worker is served as a static asset from /public (copied there at build
   // time by scripts/copy-pdf-worker.mjs) rather than bundled — webpack can't
   // parse the ESM worker via `new URL(...)`. Same-origin, so it works offline
-  // in the desktop build too.
+  // in the desktop build too. Must be the matching legacy worker.
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
   const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
   const parts: string[] = [];
