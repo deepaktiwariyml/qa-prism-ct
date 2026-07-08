@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { UsageChip } from '@/components/UsageChip';
 import { Markdown } from '@/components/Markdown';
@@ -76,8 +76,13 @@ export function TestCaseGenerator() {
   const [copied, setCopied] = useState(false);
   const [usage, setUsage] = useState<CallUsage | null>(null);
   const [bdd, setBdd] = usePersistentState('qa-prism:tc:bdd', false);
-  // System-prompt override: '' means "use the server default".
-  const [systemPrompt, setSystemPrompt] = usePersistentState('qa-prism:tc:system', '');
+  // System-prompt override: '' means "use the server default". The key is
+  // versioned (:v2) so older builds that prefilled this field with a full copy
+  // of the default don't shadow the current default from Settings.
+  const [systemPrompt, setSystemPrompt] = usePersistentState('qa-prism:tc:system:v2', '');
+  // The current effective default from the server (reflects Settings overrides).
+  // Not persisted — always refetched so it stays in sync with Settings.
+  const [systemDefault, setSystemDefault] = useState('');
   const [systemOpen, setSystemOpen] = useState(false);
   const [systemLoading, setSystemLoading] = useState(false);
   const [feature, setFeature] = useState<{ loading: boolean; content: string; error: string | null } | null>(
@@ -164,36 +169,34 @@ export function TestCaseGenerator() {
     void importFromJira(key);
   }
 
-  // Lazy-load the default system prompt into the editor the first time the
-  // Advanced panel is opened (and it hasn't been customised yet).
-  async function openSystemPanel() {
-    const next = !systemOpen;
-    setSystemOpen(next);
-    if (next && !systemPrompt.trim()) {
-      setSystemLoading(true);
-      try {
-        const res = await fetch('/api/testcases/system-prompt', { cache: 'no-store' });
-        const data = await res.json();
-        if (res.ok && data.prompt) setSystemPrompt(data.prompt as string);
-      } catch {
-        /* leave empty — server falls back to its default on generate */
-      } finally {
-        setSystemLoading(false);
-      }
-    }
-  }
-
-  async function resetSystemPrompt() {
+  // Fetch the current effective default (which reflects any Settings override)
+  // whenever this component mounts — including after a Settings save reloads
+  // the window — so the editor always shows the up-to-date default.
+  const loadSystemDefault = useCallback(async () => {
     setSystemLoading(true);
     try {
       const res = await fetch('/api/testcases/system-prompt', { cache: 'no-store' });
       const data = await res.json();
-      if (res.ok && data.prompt) setSystemPrompt(data.prompt as string);
+      if (res.ok && data.prompt) setSystemDefault(data.prompt as string);
     } catch {
-      /* ignore */
+      /* leave empty — server falls back to its default on generate */
     } finally {
       setSystemLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    void loadSystemDefault();
+  }, [loadSystemDefault]);
+
+  function openSystemPanel() {
+    setSystemOpen((o) => !o);
+  }
+
+  // Revert to the default: clear the override and refresh the default text.
+  function resetSystemPrompt() {
+    setSystemPrompt('');
+    void loadSystemDefault();
   }
 
   async function explainFeature() {
@@ -742,10 +745,10 @@ export function TestCaseGenerator() {
               </button>
             </div>
             <textarea
-              value={systemPrompt}
+              value={systemPrompt || systemDefault}
               onChange={(e) => setSystemPrompt(e.target.value)}
               rows={10}
-              placeholder={systemLoading ? 'Loading default…' : 'Leave blank to use the built-in QA-Bot V3 default.'}
+              placeholder={systemLoading ? 'Loading default…' : 'Leave blank to use the current default.'}
               className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-slate-700 outline-none focus:border-indigo-500"
             />
             <p className="mt-1.5 text-xs text-slate-400">
