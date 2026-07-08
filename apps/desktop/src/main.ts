@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { resetAnthropicClient } from '@qa-prism/llm';
 import { buildDesktopApi } from './api-server.js';
 import { loadSettings, saveSettings, settingsToEnv, hasApiKey, type Settings } from './settings.js';
 
@@ -184,11 +185,22 @@ function buildMenu(): void {
 // --- IPC for the Settings window ------------------------------------------
 ipcMain.on('settings:open', () => openSettingsWindow());
 ipcMain.handle('settings:get', () => loadSettings());
-ipcMain.handle('settings:save', (_e, next: Settings) => {
-  saveSettings(next);
-  // Relaunch so the new key/model are picked up cleanly everywhere.
-  app.relaunch();
-  app.exit(0);
+ipcMain.handle('settings:save', async (_e, next: Settings) => {
+  try {
+    saveSettings(next);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  // Apply the new settings live: update env, drop the cached Anthropic client
+  // so the next call uses the new key, then close Settings and refresh the app.
+  // No process restart needed — much smoother than a relaunch.
+  applyEnv(loadSettings());
+  resetAnthropicClient();
+  setTimeout(() => {
+    mainWindow?.webContents.reload();
+    settingsWindow?.close();
+  }, 50);
+  return { ok: true };
 });
 
 async function boot(): Promise<void> {

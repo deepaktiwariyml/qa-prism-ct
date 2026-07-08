@@ -10,6 +10,7 @@ export type {
 } from './client.js';
 export { LlmError } from './errors.js';
 export { extractJson } from './json.js';
+export { resetAnthropicClient } from './anthropic.js';
 export { setUsageRecorder, getUsageRecorder } from './usage.js';
 export type { RawUsage, TokenUsage, UsageRecorder } from './usage.js';
 export { priceFor, costOf } from './pricing.js';

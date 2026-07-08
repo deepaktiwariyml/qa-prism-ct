@@ -83,13 +83,23 @@
         for (const f of fields) settings[f] = $(f).value.trim();
         if (!settings.anthropicApiKey) {
           $('status').textContent = 'An Anthropic API key is required.';
-          $('status').className = '';
           $('status').style.color = '#dc2626';
           return;
         }
         $('save').disabled = true;
+        $('status').style.color = '#64748b';
         $('status').textContent = 'Saving…';
-        await window.qaprism.saveSettings(settings);
+        try {
+          const res = await window.qaprism.saveSettings(settings);
+          if (res && res.ok === false) throw new Error(res.error || 'Save failed');
+          $('status').style.color = '#059669';
+          $('status').textContent = 'Saved ✓';
+          // The main process closes this window and refreshes the app shortly.
+        } catch (e) {
+          $('save').disabled = false;
+          $('status').style.color = '#dc2626';
+          $('status').textContent = 'Could not save: ' + (e && e.message ? e.message : e);
+        }
       });
       $('cancel').addEventListener('click', () => window.close());
       load();
