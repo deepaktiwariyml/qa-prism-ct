@@ -40,6 +40,14 @@
       label .howto::after { content: " ↗"; }
       h2 { font-size: 15px; margin: 30px 0 2px; }
       hr { border: 0; border-top: 1px solid #e2e8f0; margin: 26px 0 0; }
+      .close-x {
+        position: fixed; top: 14px; right: 14px; z-index: 10;
+        width: 30px; height: 30px; padding: 0; border-radius: 8px;
+        border: 1px solid #e2e8f0; background: #fff; color: #64748b;
+        font-size: 15px; line-height: 1; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .close-x:hover { background: #f1f5f9; color: #0f172a; }
       details.prompt {
         border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; margin-top: 10px;
       }
@@ -71,6 +79,7 @@
     </style>
   </head>
   <body>
+    <button id="closeBtn" class="close-x" title="Close" aria-label="Close settings">✕</button>
     <h1>Settings</h1>
     <p class="sub">Your keys are stored securely on this Mac (system keychain) and never leave it.</p>
 
@@ -240,6 +249,7 @@
         }
       });
       $('cancel').addEventListener('click', () => window.close());
+      $('closeBtn').addEventListener('click', () => window.close());
       load();
     </script>
   </body>
