@@ -27,7 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="flex min-h-screen flex-col bg-white text-slate-900 antialiased">
         <SiteHeader authed={authed} funEnabled={funEnabled} desktop={desktop} />
         <div className="flex-1">{children}</div>
-        <SiteFooter authed={authed} />
+        <SiteFooter authed={authed} desktop={desktop} />
       </body>
     </html>
   );

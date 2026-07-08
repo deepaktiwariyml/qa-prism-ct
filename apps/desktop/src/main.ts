@@ -12,6 +12,9 @@ import { loadSettings, saveSettings, settingsToEnv, hasApiKey, type Settings } f
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const APP_NAME = 'QA Studio';
+app.setName(APP_NAME);
+
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let webProc: ChildProcess | null = null;
@@ -79,7 +82,7 @@ async function startWeb(): Promise<void> {
   webProc = spawn(cmd, args, { cwd: web.cwd, env, stdio: 'inherit' });
   webProc.on('exit', (code) => {
     if (code && code !== 0 && !quitting) {
-      dialog.showErrorBox('QA Prism', `The UI server exited unexpectedly (code ${code}).`);
+      dialog.showErrorBox(APP_NAME, `The UI server exited unexpectedly (code ${code}).`);
     }
   });
   await waitForHttp(`http://127.0.0.1:${webPort}`, 30_000);
@@ -107,6 +110,7 @@ function createMainWindow(): void {
     backgroundColor: '#0b1020',
     titleBarStyle: 'hiddenInset',
     show: false,
+    title: APP_NAME,
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -114,6 +118,8 @@ function createMainWindow(): void {
     },
   });
   void mainWindow.loadURL(`http://127.0.0.1:${webPort}`);
+  // Keep the OS window title as the app name rather than the web page title.
+  mainWindow.on('page-title-updated', (e) => e.preventDefault());
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   // Open external links in the system browser, keep internal nav in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -139,7 +145,7 @@ function openSettingsWindow(): void {
     maximizable: false,
     parent: mainWindow ?? undefined,
     modal: Boolean(mainWindow),
-    title: 'QA Prism — Settings',
+    title: `${APP_NAME} — Settings`,
     backgroundColor: '#ffffff',
     webPreferences: {
       contextIsolation: true,
@@ -211,7 +217,7 @@ async function boot(): Promise<void> {
     await startWeb();
     createMainWindow();
   } catch (err) {
-    dialog.showErrorBox('QA Prism failed to start', String(err instanceof Error ? err.message : err));
+    dialog.showErrorBox(`${APP_NAME} failed to start`, String(err instanceof Error ? err.message : err));
     app.quit();
     return;
   }
@@ -220,7 +226,7 @@ async function boot(): Promise<void> {
 }
 
 app.whenReady().then(boot).catch((e) => {
-  dialog.showErrorBox('QA Prism', String(e));
+  dialog.showErrorBox(APP_NAME, String(e));
   app.quit();
 });
 

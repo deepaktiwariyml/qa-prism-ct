@@ -46,7 +46,7 @@ export function SiteHeader({
               Code &amp; Theory
             </span>
             <span className="hidden rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm sm:inline">
-              QA Prism
+              {desktop ? 'QA Studio' : 'QA Prism'}
             </span>
           </span>
         </Link>

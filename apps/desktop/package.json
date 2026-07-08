@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "dist/main.js",
-  "description": "QA Prism desktop app (Electron) — LLM-powered QA tools.",
+  "description": "QA Studio desktop app (Electron) — LLM-powered QA tools.",
   "scripts": {
     "build:main": "tsc -p tsconfig.json",
     "build:web": "cross-env NEXT_STANDALONE=1 pnpm --filter @qa-prism/web build && node scripts/assemble-web.mjs",
@@ -31,16 +31,16 @@
     "typescript": "^5.6.2"
   },
   "build": {
-    "appId": "com.codeandtheory.qaprism",
-    "productName": "QA Prism",
+    "appId": "com.codeandtheory.qastudio",
+    "productName": "QA Studio",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "preload.cjs", "main-preload.cjs", "settings.html", "package.json"],
     "extraResources": [{ "from": "build-web", "to": "web" }],
     "mac": {
       "target": ["dmg", "zip"],
       "category": "public.app-category.developer-tools",
-      "artifactName": "QA-Prism-${version}-${arch}.${ext}"
+      "artifactName": "QA-Studio-${version}-${arch}.${ext}"
     },
-    "dmg": { "title": "QA Prism ${version}" }
+    "dmg": { "title": "QA Studio ${version}" }
   }
 }
