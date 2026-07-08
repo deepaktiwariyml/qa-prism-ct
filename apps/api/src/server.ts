@@ -311,9 +311,13 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   });
 
   // PR impact analyser (spec §6.5): fetch the diff, ask Claude for risk-ranked
+  // Runtime feature flags for the web app.
+  app.get('/flags', async () => ({ whatsBroken: process.env.WHATS_BROKEN_ENABLED === '1' }));
+
   // "What's Broken": predict regressions/impacted tests from PRs + docs +
-  // test cases + Jira. Stateless (ephemeral) — no persistence.
+  // test cases + Jira. Stateless (ephemeral) — no persistence. Gated by flag.
   app.post('/breakage/analyze', async (req, reply) => {
+    if (process.env.WHATS_BROKEN_ENABLED !== '1') return reply.code(404).send({ error: 'not found' });
     const parsed = BreakageInputSchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });

@@ -19,6 +19,8 @@ export interface Settings {
   // Per-operation system-prompt overrides, keyed by SYSTEM_PROMPTS[].key.
   // Not secret — stored in the clear. Blank/absent = use the canonical default.
   systemPrompts: Record<string, string>;
+  // Feature flag: gate the (experimental) "What's Broken" feature. Off by default.
+  whatsBrokenEnabled: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -30,6 +32,7 @@ const DEFAULTS: Settings = {
   jiraEmail: '',
   jiraApiToken: '',
   systemPrompts: {},
+  whatsBrokenEnabled: false,
 };
 
 interface StoredShape {
@@ -38,6 +41,7 @@ interface StoredShape {
   jiraBaseUrl?: string;
   jiraEmail?: string;
   systemPrompts?: Record<string, string>;
+  whatsBrokenEnabled?: boolean;
   // secrets stored as base64 ciphertext (safeStorage) or '' when unset
   anthropicApiKeyEnc?: string;
   githubTokenEnc?: string;
@@ -86,6 +90,7 @@ export function loadSettings(): Settings {
       jiraApiToken: decrypt(raw.jiraApiTokenEnc),
       systemPrompts:
         raw.systemPrompts && typeof raw.systemPrompts === 'object' ? { ...raw.systemPrompts } : {},
+      whatsBrokenEnabled: raw.whatsBrokenEnabled === true,
     };
   } catch {
     return { ...DEFAULTS };
@@ -104,6 +109,7 @@ export function saveSettings(next: Settings): void {
     jiraBaseUrl: next.jiraBaseUrl || '',
     jiraEmail: next.jiraEmail || '',
     systemPrompts: prompts,
+    whatsBrokenEnabled: Boolean(next.whatsBrokenEnabled),
     anthropicApiKeyEnc: encrypt(next.anthropicApiKey),
     githubTokenEnc: encrypt(next.githubToken),
     jiraApiTokenEnc: encrypt(next.jiraApiToken),
@@ -124,6 +130,8 @@ export function settingsToEnv(s: Settings): Record<string, string> {
   if (s.jiraBaseUrl) env.JIRA_BASE_URL = s.jiraBaseUrl;
   if (s.jiraEmail) env.JIRA_EMAIL = s.jiraEmail;
   if (s.jiraApiToken) env.JIRA_API_TOKEN = s.jiraApiToken;
+  // Always set explicitly ('1'/'0') so toggling off overwrites a prior '1'.
+  env.WHATS_BROKEN_ENABLED = s.whatsBrokenEnabled ? '1' : '0';
   return env;
 }
 

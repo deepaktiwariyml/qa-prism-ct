@@ -297,6 +297,8 @@ export function buildDesktopApi(usageFile: string): Server {
     const route = `${method} ${path}`;
 
     if (route === 'GET /health') return sendJson(res, 200, { ok: true, key: Boolean(process.env.ANTHROPIC_API_KEY) });
+    // Runtime feature flags (read live from env, which Settings updates in-process).
+    if (route === 'GET /flags') return sendJson(res, 200, { whatsBroken: process.env.WHATS_BROKEN_ENABLED === '1' });
     if (route === 'GET /testcases/system-prompt')
       return sendJson(res, 200, { prompt: resolveSystemPrompt('testcases.generate') });
     // Canonical system prompts for the read-only reference page (defaults only,
@@ -331,6 +333,7 @@ export function buildDesktopApi(usageFile: string): Server {
         case '/testcases/explain-feature':
           return sendJson(res, 200, await guard(() => explainFeature(body)));
         case '/breakage/analyze':
+          if (process.env.WHATS_BROKEN_ENABLED !== '1') return sendJson(res, 404, { error: 'not found' });
           return sendJson(res, 200, await guard(() => breakage(body)));
         case '/testcases/jira-import': {
           const parsed = JiraImportBody.safeParse(body);

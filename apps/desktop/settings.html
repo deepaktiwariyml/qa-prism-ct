@@ -48,6 +48,11 @@
         display: flex; align-items: center; justify-content: center;
       }
       .close-x:hover { background: #f1f5f9; color: #0f172a; }
+      .switch-row {
+        display: flex; align-items: flex-start; gap: 10px; margin-top: 12px;
+        font-size: 13px; color: #0f172a; font-weight: 400; cursor: pointer;
+      }
+      .switch-row input { width: 16px; height: 16px; margin: 1px 0 0; flex: none; accent-color: #4f46e5; }
       details.prompt {
         border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; margin-top: 10px;
       }
@@ -117,6 +122,14 @@
         <input id="jiraApiToken" type="password" placeholder="…" autocomplete="off" spellcheck="false" />
       </div>
     </div>
+
+    <hr />
+    <h2>Experimental</h2>
+    <label class="switch-row">
+      <input id="whatsBrokenEnabled" type="checkbox" />
+      <span>I want to test <strong>What&apos;s Broken</strong>
+        <span class="hint">— shows the feature in the navigation. Off by default.</span></span>
+    </label>
 
     <hr />
     <h2>System prompts</h2>
@@ -217,6 +230,7 @@
       async function load() {
         const s = await window.qaprism.getSettings();
         for (const f of fields) $(f).value = s[f] ?? '';
+        $('whatsBrokenEnabled').checked = s.whatsBrokenEnabled === true;
         try {
           const registry = await window.qaprism.getPromptRegistry();
           renderPrompts(registry || [], s.systemPrompts || {});
@@ -228,6 +242,7 @@
         const settings = {};
         for (const f of fields) settings[f] = $(f).value.trim();
         settings.systemPrompts = collectPrompts();
+        settings.whatsBrokenEnabled = $('whatsBrokenEnabled').checked;
         if (!settings.anthropicApiKey) {
           $('status').textContent = 'An Anthropic API key is required.';
           $('status').style.color = '#dc2626';

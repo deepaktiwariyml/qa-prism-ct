@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Logo } from './Logo';
 
 const NAV = [
@@ -24,9 +25,24 @@ export function SiteHeader({
   desktop?: boolean;
 }) {
   const pathname = usePathname();
+  // "What's Broken" is gated behind a runtime Settings toggle (off by default).
+  // Fetched live so toggling it takes effect on the next app reload.
+  const [whatsBroken, setWhatsBroken] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/flags', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => alive && setWhatsBroken(Boolean(d?.whatsBroken)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // The desktop build excludes Website Scans (no DB/Redis/Chromium), so drop
   // that nav entry there.
-  const base = desktop ? NAV.filter((n) => n.href !== '/dashboard') : NAV;
+  let base = desktop ? NAV.filter((n) => n.href !== '/dashboard') : NAV;
+  if (!whatsBroken) base = base.filter((n) => n.href !== '/whats-broken');
   const nav = funEnabled ? [...base, { href: '/fun', label: '🎮 Fun' }] : base;
 
   async function logout() {
