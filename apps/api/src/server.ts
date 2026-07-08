@@ -109,6 +109,22 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+interface AdfNode {
+  type?: string;
+  text?: string;
+  content?: AdfNode[];
+}
+
+/** Extract plain text from Atlassian Document Format (ADF) description JSON. */
+function adfToText(node: AdfNode | null | undefined): string {
+  if (!node || typeof node !== 'object') return '';
+  if (node.type === 'text' && typeof node.text === 'string') return node.text;
+  const inner = Array.isArray(node.content) ? node.content.map(adfToText).join('') : '';
+  const blocks = ['paragraph', 'heading', 'blockquote', 'codeBlock', 'listItem', 'rule'];
+  if (node.type && blocks.includes(node.type)) return `${inner}\n`;
+  return inner;
+}
+
 /** Attach existing-finding ids that overlap an impact area's files/name. */
 function crossLinkFindings(
   area: { name: string; impactedFiles: string[] },
@@ -443,7 +459,7 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     if (!key) return reply.code(400).send({ error: 'Enter a Jira ticket key (e.g. ABC-123) or a ticket URL.' });
     try {
       const auth = Buffer.from(`${email}:${token}`).toString('base64');
-      const url = `${base}/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary&expand=renderedFields`;
+      const url = `${base}/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description&expand=renderedFields`;
       const res = await fetch(url, { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } });
       if (res.status === 401 || res.status === 403) {
         return reply.code(400).send({ error: 'Jira authentication failed — check the email and API token.' });
@@ -451,14 +467,13 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       if (res.status === 404) return reply.code(404).send({ error: `Jira ticket ${key} not found (or no access).` });
       if (!res.ok) return reply.code(502).send({ error: `Jira returned ${res.status}.` });
       const data = (await res.json()) as {
-        fields?: { summary?: string };
+        fields?: { summary?: string; description?: AdfNode | null };
         renderedFields?: { description?: string };
       };
-      return {
-        key,
-        summary: data.fields?.summary ?? '',
-        description: htmlToText(data.renderedFields?.description ?? ''),
-      };
+      // Prefer the server-rendered HTML; fall back to walking the ADF description.
+      let description = htmlToText(data.renderedFields?.description ?? '');
+      if (!description && data.fields?.description) description = adfToText(data.fields.description).trim();
+      return { key, summary: data.fields?.summary ?? '', description };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
