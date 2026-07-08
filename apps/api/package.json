@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
+    "@qa-prism/breakage-analyser": "workspace:*",
     "@qa-prism/core": "workspace:*",
     "@qa-prism/db": "workspace:*",
     "@qa-prism/generator": "workspace:*",

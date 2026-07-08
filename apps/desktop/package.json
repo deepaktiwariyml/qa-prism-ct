@@ -15,6 +15,7 @@
     "dist:mac": "pnpm run build:main && pnpm run build:web && electron-builder --mac"
   },
   "devDependencies": {
+    "@qa-prism/breakage-analyser": "workspace:*",
     "@qa-prism/core": "workspace:*",
     "@qa-prism/generator": "workspace:*",
     "@qa-prism/impact-analyser": "workspace:*",

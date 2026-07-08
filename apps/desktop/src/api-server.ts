@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { SelectionSchema } from '@qa-prism/core';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
+import { analyzeBreakage, BreakageInputSchema } from '@qa-prism/breakage-analyser';
 import {
   createLlmClient,
   setUsageRecorder,
@@ -279,6 +280,12 @@ export function buildDesktopApi(usageFile: string): Server {
     };
   }
 
+  async function breakage(body: unknown) {
+    const input = BreakageInputSchema.parse(body);
+    const githubToken = input.githubToken || process.env.GITHUB_TOKEN;
+    return analyzeBreakage({ ...input, githubToken });
+  }
+
   const server = createServer((req, res) => {
     void handle(req, res).catch((err) => sendJson(res, statusOf(err), { error: messageOf(err) }));
   });
@@ -323,6 +330,8 @@ export function buildDesktopApi(usageFile: string): Server {
           return sendJson(res, 200, await guard(() => explainTestcase(body)));
         case '/testcases/explain-feature':
           return sendJson(res, 200, await guard(() => explainFeature(body)));
+        case '/breakage/analyze':
+          return sendJson(res, 200, await guard(() => breakage(body)));
         case '/testcases/jira-import': {
           const parsed = JiraImportBody.safeParse(body);
           if (!parsed.success) return sendJson(res, 400, { error: 'invalid body' });

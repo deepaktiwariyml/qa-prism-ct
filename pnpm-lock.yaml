@@ -41,6 +41,9 @@ importers:
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0
+      '@qa-prism/breakage-analyser':
+        specifier: workspace:*
+        version: link:../../packages/breakage-analyser
       '@qa-prism/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -102,6 +105,9 @@ importers:
 
   apps/desktop:
     devDependencies:
+      '@qa-prism/breakage-analyser':
+        specifier: workspace:*
+        version: link:../../packages/breakage-analyser
       '@qa-prism/core':
         specifier: workspace:*
         version: link:../../packages/core

@@ -5,6 +5,7 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
+import { analyzeBreakage, BreakageInputSchema } from '@qa-prism/breakage-analyser';
 import {
   createLlmClient,
   setUsageRecorder,
@@ -310,6 +311,21 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   });
 
   // PR impact analyser (spec §6.5): fetch the diff, ask Claude for risk-ranked
+  // "What's Broken": predict regressions/impacted tests from PRs + docs +
+  // test cases + Jira. Stateless (ephemeral) — no persistence.
+  app.post('/breakage/analyze', async (req, reply) => {
+    const parsed = BreakageInputSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    }
+    const githubToken = parsed.data.githubToken || process.env.GITHUB_TOKEN;
+    try {
+      return await analyzeBreakage({ ...parsed.data, githubToken });
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // areas, cross-link to existing findings, persist an ImpactReport.
   app.post('/impact', async (req, reply) => {
     const parsed = ImpactBody.safeParse(req.body);
