@@ -25,15 +25,20 @@ export function SiteFooter({ authed = false, desktop = false }: { authed?: boole
             <strong className="font-semibold text-slate-700">Code &amp; Theory</strong>.
           </span>
         </div>
-        {authed && (
-          <div className="flex gap-4 text-sm text-slate-500">
-            {links.map((l) => (
-              <Link key={l.href} href={l.href} className="hover:text-slate-900">
-                {l.label}
-              </Link>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          {authed && (
+            <div className="flex gap-4 text-sm text-slate-500">
+              {links.map((l) => (
+                <Link key={l.href} href={l.href} className="hover:text-slate-900">
+                  {l.label}
+                </Link>
+              ))}
+            </div>
+          )}
+          <span className="text-xs text-slate-400">
+            Developed by <span className="font-medium text-slate-600">Deepak Tiwari</span>
+          </span>
+        </div>
       </div>
     </footer>
   );
