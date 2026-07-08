@@ -38,9 +38,29 @@ pnpm --filter @qa-prism/desktop dist:mac
 Produces `apps/desktop/release/QA-Prism-<version>-<arch>.dmg` (+ a `.zip`).
 Share the `.dmg` over Slack; teammates double-click to install.
 
-> **Unsigned build note:** without an Apple Developer certificate the app is
-> not code-signed/notarized, so on first open macOS Gatekeeper shows an
-> "unidentified developer" warning. Teammates open it once via **right-click →
-> Open** (or System Settings → Privacy & Security → Open Anyway). Signing +
-> notarization removes this — add `CSC_LINK`/`CSC_KEY_PASSWORD` +
-> `notarize` config when a cert is available.
+## Opening a shared (unsigned) build — read this
+
+The build is **not** signed with an Apple Developer certificate, so when a
+teammate downloads the `.dmg` (Slack, email, etc.) macOS quarantines it and
+refuses to open the app with a misleading message:
+
+> "QA Studio" is damaged and can't be opened.
+
+It is **not** damaged — that's Gatekeeper blocking an unsigned, downloaded
+app. To open it, each recipient does this once:
+
+1. Open the `.dmg` and drag **QA Studio** into **Applications**.
+2. In **Terminal**, remove the quarantine flag:
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/QA Studio.app"
+   ```
+3. Open QA Studio normally.
+
+(Plain "right-click → Open" does not clear the *damaged* state; the `xattr`
+command is the reliable fix.)
+
+### Removing the warning entirely (optional)
+The permanent fix is **code signing + notarization**, which needs an Apple
+Developer account (~$99/yr). With a Developer ID cert, set `CSC_LINK` +
+`CSC_KEY_PASSWORD` and enable `mac.notarize` in the build config; then the
+`.dmg` opens with no warning and no `xattr` step for anyone.
