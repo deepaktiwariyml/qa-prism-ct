@@ -45,7 +45,17 @@ function applyEnv(s: Settings): void {
 async function startApi(): Promise<void> {
   apiPort = await freePort();
   const api = buildDesktopApi(join(app.getPath('userData'), 'usage.json'));
-  await api.listen({ host: '127.0.0.1', port: apiPort });
+  await new Promise<void>((resolve, reject) => {
+    api.on('error', reject);
+    api.listen(apiPort, '127.0.0.1', resolve);
+  });
+}
+
+/** Where the Framework Generator's template assets live (registry/ + partials/). */
+function generatorRoot(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'generator')
+    : join(__dirname, '..', '..', '..', 'packages', 'generator');
 }
 
 /** Locate the Next server we run for the UI. Standalone build when packaged,
@@ -211,6 +221,7 @@ ipcMain.handle('settings:save', async (_e, next: Settings) => {
 
 async function boot(): Promise<void> {
   applyEnv(loadSettings());
+  process.env.QA_GENERATOR_ROOT = generatorRoot();
   buildMenu();
   try {
     await startApi();

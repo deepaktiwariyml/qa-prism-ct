@@ -1,9 +1,7 @@
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, relative, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { Manifest, Selection } from './types.js';
-
-const PARTIALS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'partials');
+import { assetsRoot } from './assets.js';
 
 /** Maps a partial's source path to its destination within the generated project. */
 function partialDest(partial: string): string {
@@ -98,6 +96,7 @@ export async function render(
   outDir: string,
 ): Promise<string[]> {
   const vars = buildVars(manifest, sel);
+  const partialsRoot = join(assetsRoot(), 'partials');
   const filesRoot = join(cellPath, manifest.files);
   const allFiles = await walk(filesRoot);
   const written: string[] = [];
@@ -115,7 +114,7 @@ export async function render(
 
   // Render shared partials (e.g. CI workflow) into their mapped destinations.
   for (const partial of manifest.partials) {
-    const src = join(PARTIALS_ROOT, partial);
+    const src = join(partialsRoot, partial);
     const dest = join(outDir, partialDest(partial));
     await mkdir(dirname(dest), { recursive: true });
     const raw = await readFile(src, 'utf8');

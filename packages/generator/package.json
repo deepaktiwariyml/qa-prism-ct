@@ -19,10 +19,9 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "archiver": "^7.0.1"
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
-    "@types/archiver": "^6.0.3",
     "vitest": "^2.1.5"
   }
 }

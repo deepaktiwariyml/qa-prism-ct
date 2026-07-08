@@ -1,10 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { RegistryIndex, Manifest, Selection, ResolveResult } from './types.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REGISTRY = join(__dirname, '..', 'registry');
+import { assetsRoot } from './assets.js';
 
 /**
  * Resolve a user's dropdown selection to a concrete template cell.
@@ -18,6 +15,7 @@ const REGISTRY = join(__dirname, '..', 'registry');
  * would be produced instead of failing.
  */
 export async function resolve(sel: Selection): Promise<ResolveResult> {
+  const REGISTRY = join(assetsRoot(), 'registry');
   const index: RegistryIndex = JSON.parse(
     await readFile(join(REGISTRY, 'index.json'), 'utf8'),
   );

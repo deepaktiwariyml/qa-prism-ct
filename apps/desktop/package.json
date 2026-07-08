@@ -6,7 +6,7 @@
   "main": "dist/main.js",
   "description": "QA Studio desktop app (Electron) — LLM-powered QA tools.",
   "scripts": {
-    "build:main": "tsc -p tsconfig.json",
+    "build:main": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/main.js --external:electron --log-level=warning",
     "build:web": "cross-env NEXT_STANDALONE=1 pnpm --filter @qa-prism/web build && node scripts/assemble-web.mjs",
     "build:web:dev": "pnpm --filter @qa-prism/web build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -14,28 +14,29 @@
     "start": "electron .",
     "dist:mac": "pnpm run build:main && pnpm run build:web && electron-builder --mac"
   },
-  "dependencies": {
-    "@fastify/cors": "^10.0.1",
+  "devDependencies": {
     "@qa-prism/core": "workspace:*",
     "@qa-prism/generator": "workspace:*",
     "@qa-prism/impact-analyser": "workspace:*",
     "@qa-prism/llm": "workspace:*",
-    "fastify": "^5.1.0",
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
     "@types/node": "^22.7.4",
     "cross-env": "^7.0.3",
     "electron": "^33.0.2",
     "electron-builder": "^25.1.8",
-    "typescript": "^5.6.2"
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.2",
+    "zod": "^3.23.8"
   },
   "build": {
     "appId": "com.codeandtheory.qastudio",
     "productName": "QA Studio",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "preload.cjs", "main-preload.cjs", "settings.html", "package.json"],
-    "extraResources": [{ "from": "build-web", "to": "web" }],
+    "extraResources": [
+      { "from": "build-web", "to": "web" },
+      { "from": "../../packages/generator/registry", "to": "generator/registry" },
+      { "from": "../../packages/generator/partials", "to": "generator/partials" }
+    ],
     "mac": {
       "target": ["dmg", "zip"],
       "category": "public.app-category.developer-tools",
