@@ -36,7 +36,7 @@ export function SiteFooter({ authed = false, desktop = false }: { authed?: boole
             </div>
           )}
           <span className="text-xs text-slate-400">
-            Developed by <span className="font-medium text-slate-600">Deepak Tiwari</span>
+            Developed by <span className="font-medium text-slate-600">Deepak Tiwari &amp; Vinoth Pandian</span>
           </span>
         </div>
       </div>
