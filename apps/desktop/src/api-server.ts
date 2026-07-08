@@ -6,7 +6,8 @@ import { analyzePr } from '@qa-prism/impact-analyser';
 import {
   createLlmClient,
   setUsageRecorder,
-  DEFAULT_TESTCASE_SYSTEM,
+  resolveSystemPrompt,
+  SYSTEM_PROMPTS,
   type TokenUsage,
 } from '@qa-prism/llm';
 import { UsageStore } from './usage-store.js';
@@ -35,6 +36,7 @@ const CombineBody = z.object({ testcases: z.array(z.string().min(1)).min(2).max(
 const ExplainBody = z.object({ testcase: z.string().min(1).max(2000) });
 const ImpactBody = z.object({ prUrl: z.string().min(1), githubToken: z.string().optional() });
 const JiraImportBody = z.object({ ticket: z.string().min(1).max(300) });
+const JiraSearchBody = z.object({ query: z.string().max(200) });
 
 /** Pull a Jira issue key (e.g. ABC-123) out of a raw key or a ticket URL. */
 function extractJiraKey(input: string): string {
@@ -87,6 +89,39 @@ async function fetchJiraTicket(rawInput: string): Promise<{ key: string; summary
   return { key, summary: data.fields?.summary ?? '', description };
 }
 
+/**
+ * Typeahead search for Jira issues. Uses the issue-picker endpoint, which
+ * matches on key or summary text and is what Jira's own autocomplete uses.
+ * Returns [] (never throws) when Jira isn't configured or the query is empty,
+ * so the UI can degrade to a plain "type a key" field.
+ */
+async function searchJiraTickets(query: string): Promise<Array<{ key: string; summary: string }>> {
+  const base = (process.env.JIRA_BASE_URL || '').replace(/\/+$/, '');
+  const email = process.env.JIRA_EMAIL || '';
+  const token = process.env.JIRA_API_TOKEN || '';
+  const q = query.trim();
+  if (!base || !email || !token || !q) return [];
+  const auth = Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${base}/rest/api/3/issue/picker?query=${encodeURIComponent(q)}&showSubTasks=true&showSubTaskParent=true`;
+  const res = await fetch(url, { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    sections?: Array<{ issues?: Array<{ key?: string; summaryText?: string; summary?: string }> }>;
+  };
+  const seen = new Set<string>();
+  const out: Array<{ key: string; summary: string }> = [];
+  for (const section of data.sections ?? []) {
+    for (const issue of section.issues ?? []) {
+      const key = issue.key ?? '';
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ key, summary: issue.summaryText ?? issue.summary ?? '' });
+      if (out.length >= 15) return out;
+    }
+  }
+  return out;
+}
+
 interface AdfNode {
   type?: string;
   text?: string;
@@ -126,7 +161,7 @@ export function buildDesktopApi(usageFile: string): Server {
 
   async function generateTestcases(body: unknown) {
     const { description, context, ...rest } = TestCasesBody.parse(body);
-    const system = rest.system?.trim() || DEFAULT_TESTCASE_SYSTEM;
+    const system = rest.system?.trim() || resolveSystemPrompt('testcases.generate');
     const bdd = rest.format === 'bdd';
     const llm = createLlmClient();
     const schema = z.object({
@@ -163,8 +198,7 @@ export function buildDesktopApi(usageFile: string): Server {
       model: FAST_MODEL(),
       operation: 'testcases.fill-columns',
       onUsage: (x) => (u = x),
-      system:
-        'You are a senior QA engineer filling in a test-case table. For each test case (a fixed one-line title you must NOT change or restate) and each requested column, produce a concise, useful cell value inferred from the column name (e.g. "Priority" -> High/Medium/Low; "Preconditions", "Test Steps", "Expected Result", "Test Data" -> a short phrase or sentence). Return JSON with a `rows` matrix where rows[i] is the array of cell values for test case i, one value per column in the exact given order.',
+      system: resolveSystemPrompt('testcases.fill-columns'),
       prompt: `Columns (in order): ${JSON.stringify(columns)}\n\nTest cases:\n${numbered}\n\nReturn JSON: {"rows":[["col1 value","col2 value", ...], ...]} with exactly ${testcases.length} rows and ${columns.length} values each.`,
       schema,
     });
@@ -183,8 +217,7 @@ export function buildDesktopApi(usageFile: string): Server {
     const result = await llm.completeJSON({
       operation: 'testcases.combine',
       onUsage: (x) => (u = x),
-      system:
-        'You are a senior QA engineer. Merge the given manual test cases into ONE coherent, concise one-line test case that preserves their combined intent and important checks. Imperative, no numbering. Classify it as positive, negative, or edge.',
+      system: resolveSystemPrompt('testcases.combine'),
       prompt: `Combine these test cases into one:\n${testcases.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nReturn JSON: {"title":"...","type":"positive|negative|edge"}.`,
       schema,
     });
@@ -198,8 +231,7 @@ export function buildDesktopApi(usageFile: string): Server {
     const raw = await llm.complete({
       operation: 'testcases.explain',
       onUsage: (x) => (u = x),
-      system:
-        'You are a senior QA engineer. Explain a one-line manual test case clearly and practically for a tester. Format the answer as Markdown with these bold section labels, EACH ON ITS OWN LINE and separated by a blank line, never one run-on paragraph:\n\n**What it verifies**\n<1-2 sentences>\n\n**Preconditions**\n- <bullet>\n- <bullet>\n\n**Steps**\n1. <step>\n2. <step>\n\n**Expected Result**\n- <bullet or short sentence>\n\nKeep it concise. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+      system: resolveSystemPrompt('testcases.explain'),
       prompt: `Explain this test case:\n"${testcase}"`,
     });
     const explanation = stripCodeFence(raw);
@@ -214,8 +246,7 @@ export function buildDesktopApi(usageFile: string): Server {
     const raw = await llm.complete({
       operation: 'Explain Feature',
       onUsage: (x) => (u = x),
-      system:
-        'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Format the answer as GitHub-flavored Markdown with these bold section labels, each on its own line and separated by a blank line: **In simple terms** (1-2 sentences), **How it works** (a few plain steps as a numbered list), **Example** (a concrete walkthrough), and **Why it matters** (business value, as bullet points). Keep it concise and friendly. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+      system: resolveSystemPrompt('testcases.explain-feature'),
       prompt: `Explain this feature so everyone understands it:\n${description}`,
     });
     const explanation = stripCodeFence(raw);
@@ -259,7 +290,19 @@ export function buildDesktopApi(usageFile: string): Server {
     const route = `${method} ${path}`;
 
     if (route === 'GET /health') return sendJson(res, 200, { ok: true, key: Boolean(process.env.ANTHROPIC_API_KEY) });
-    if (route === 'GET /testcases/system-prompt') return sendJson(res, 200, { prompt: DEFAULT_TESTCASE_SYSTEM });
+    if (route === 'GET /testcases/system-prompt')
+      return sendJson(res, 200, { prompt: resolveSystemPrompt('testcases.generate') });
+    // Canonical system prompts for the read-only reference page (defaults only,
+    // never the user's overrides).
+    if (route === 'GET /prompts')
+      return sendJson(res, 200, {
+        prompts: SYSTEM_PROMPTS.map((p) => ({
+          key: p.key,
+          label: p.label,
+          description: p.description,
+          prompt: p.default,
+        })),
+      });
     if (route === 'GET /generator/cells') return sendJson(res, 200, (await loadRegistry()).cells);
     if (route === 'GET /usage') {
       const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 10, 1), 60);
@@ -284,6 +327,11 @@ export function buildDesktopApi(usageFile: string): Server {
           const parsed = JiraImportBody.safeParse(body);
           if (!parsed.success) return sendJson(res, 400, { error: 'invalid body' });
           return sendJson(res, 200, await fetchJiraTicket(parsed.data.ticket));
+        }
+        case '/testcases/jira-search': {
+          const parsed = JiraSearchBody.safeParse(body);
+          if (!parsed.success) return sendJson(res, 400, { error: 'invalid body' });
+          return sendJson(res, 200, { results: await searchJiraTickets(parsed.data.query) });
         }
         case '/impact':
           try {

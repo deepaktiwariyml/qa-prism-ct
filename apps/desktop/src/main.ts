@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { resetAnthropicClient } from '@qa-prism/llm';
+import { resetAnthropicClient, setSystemPromptOverrides, SYSTEM_PROMPTS } from '@qa-prism/llm';
 import { buildDesktopApi } from './api-server.js';
 import { loadSettings, saveSettings, settingsToEnv, hasApiKey, type Settings } from './settings.js';
 
@@ -38,6 +38,9 @@ function freePort(): Promise<number> {
 function applyEnv(s: Settings): void {
   const env = settingsToEnv(s);
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
+  // The embedded API runs in this same process, so applying overrides here
+  // takes effect for all subsequent LLM calls with no restart.
+  setSystemPromptOverrides(s.systemPrompts);
 }
 
 /** Start the embedded LLM API in-process on a free port. */
@@ -201,6 +204,11 @@ function buildMenu(): void {
 // --- IPC for the Settings window ------------------------------------------
 ipcMain.on('settings:open', () => openSettingsWindow());
 ipcMain.handle('settings:get', () => loadSettings());
+// Registry of canonical prompts (key/label/description/default) so the
+// Settings window can show each one with its default for editing.
+ipcMain.handle('prompts:registry', () =>
+  SYSTEM_PROMPTS.map((p) => ({ key: p.key, label: p.label, description: p.description, default: p.default })),
+);
 ipcMain.handle('settings:save', async (_e, next: Settings) => {
   try {
     saveSettings(next);

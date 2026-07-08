@@ -38,6 +38,36 @@
       a { color: #4f46e5; }
       label .howto { float: right; font-weight: 500; font-size: 11px; }
       label .howto::after { content: " ↗"; }
+      h2 { font-size: 15px; margin: 30px 0 2px; }
+      hr { border: 0; border-top: 1px solid #e2e8f0; margin: 26px 0 0; }
+      details.prompt {
+        border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; margin-top: 10px;
+      }
+      details.prompt > summary {
+        cursor: pointer; list-style: none; padding: 11px 13px; font-size: 13px; font-weight: 600;
+        color: #0f172a; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      }
+      details.prompt > summary::-webkit-details-marker { display: none; }
+      details.prompt > summary::after { content: "▸"; color: #94a3b8; font-weight: 400; }
+      details.prompt[open] > summary::after { content: "▾"; }
+      .badge-custom {
+        font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+        color: #b45309; background: #fef3c7; border-radius: 999px; padding: 2px 8px; margin-left: auto;
+      }
+      .prompt-body { padding: 0 13px 13px; }
+      .prompt-body .desc { color: #64748b; font-size: 12px; margin: 0 0 8px; }
+      .prompt-body textarea {
+        width: 100%; min-height: 150px; resize: vertical; padding: 9px 11px; font-size: 12px;
+        line-height: 1.5; border: 1px solid #cbd5e1; border-radius: 9px; outline: none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #fff; color: #0f172a;
+      }
+      .prompt-body textarea:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+      .prompt-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+      .reset {
+        border: 0; background: none; color: #6366f1; font-size: 12px; font-weight: 600;
+        padding: 4px 2px; cursor: pointer; width: auto;
+      }
+      .reset:disabled { color: #cbd5e1; cursor: default; }
     </style>
   </head>
   <body>
@@ -79,6 +109,15 @@
       </div>
     </div>
 
+    <hr />
+    <h2>System prompts</h2>
+    <p class="note">
+      These are the instructions behind each AI call. Editing one here overrides it for all your
+      calls from now on. The read-only “System Prompts” page in the app keeps showing the original
+      defaults. Clear a box to fall back to the default.
+    </p>
+    <div id="prompts"></div>
+
     <div class="actions">
       <button id="save">Save</button>
       <button id="cancel" class="secondary">Cancel</button>
@@ -93,13 +132,93 @@
         'githubToken', 'jiraBaseUrl', 'jiraEmail', 'jiraApiToken',
       ];
 
+      // key -> { default, textarea, badge, reset } for the prompt editors.
+      const promptEls = {};
+
+      function renderPrompts(registry, overrides) {
+        const root = $('prompts');
+        root.textContent = '';
+        for (const def of registry) {
+          const current = overrides[def.key];
+          const customized = typeof current === 'string' && current.trim().length > 0;
+
+          const details = document.createElement('details');
+          details.className = 'prompt';
+
+          const summary = document.createElement('summary');
+          const title = document.createElement('span');
+          title.textContent = def.label;
+          summary.appendChild(title);
+          const badge = document.createElement('span');
+          badge.className = 'badge-custom';
+          badge.textContent = 'Customized';
+          badge.style.display = customized ? '' : 'none';
+          summary.appendChild(badge);
+          details.appendChild(summary);
+
+          const body = document.createElement('div');
+          body.className = 'prompt-body';
+          const desc = document.createElement('p');
+          desc.className = 'desc';
+          desc.textContent = def.description;
+          body.appendChild(desc);
+
+          const ta = document.createElement('textarea');
+          ta.spellcheck = false;
+          ta.value = customized ? current : def.default;
+          body.appendChild(ta);
+
+          const actions = document.createElement('div');
+          actions.className = 'prompt-actions';
+          const reset = document.createElement('button');
+          reset.type = 'button';
+          reset.className = 'reset';
+          reset.textContent = 'Reset to default';
+          reset.disabled = ta.value.trim() === def.default.trim();
+          actions.appendChild(reset);
+          body.appendChild(actions);
+          details.appendChild(body);
+          root.appendChild(details);
+
+          const refresh = () => {
+            const isDefault = ta.value.trim() === def.default.trim();
+            reset.disabled = isDefault;
+            badge.style.display = !isDefault && ta.value.trim() ? '' : 'none';
+          };
+          ta.addEventListener('input', refresh);
+          reset.addEventListener('click', () => {
+            ta.value = def.default;
+            refresh();
+          });
+
+          promptEls[def.key] = { def, ta };
+        }
+      }
+
+      // Collect only overrides that differ from the canonical default.
+      function collectPrompts() {
+        const out = {};
+        for (const [key, { def, ta }] of Object.entries(promptEls)) {
+          const v = ta.value.trim();
+          if (v && v !== def.default.trim()) out[key] = ta.value;
+        }
+        return out;
+      }
+
       async function load() {
         const s = await window.qaprism.getSettings();
         for (const f of fields) $(f).value = s[f] ?? '';
+        try {
+          const registry = await window.qaprism.getPromptRegistry();
+          renderPrompts(registry || [], s.systemPrompts || {});
+        } catch {
+          /* registry unavailable — prompt editing simply won't render */
+        }
       }
       $('save').addEventListener('click', async () => {
         const settings = {};
         for (const f of fields) settings[f] = $(f).value.trim();
+        settings.systemPrompts = collectPrompts();
         if (!settings.anthropicApiKey) {
           $('status').textContent = 'An Anthropic API key is required.';
           $('status').style.color = '#dc2626';

@@ -16,6 +16,9 @@ export interface Settings {
   jiraBaseUrl: string;
   jiraEmail: string;
   jiraApiToken: string;
+  // Per-operation system-prompt overrides, keyed by SYSTEM_PROMPTS[].key.
+  // Not secret — stored in the clear. Blank/absent = use the canonical default.
+  systemPrompts: Record<string, string>;
 }
 
 const DEFAULTS: Settings = {
@@ -26,6 +29,7 @@ const DEFAULTS: Settings = {
   jiraBaseUrl: '',
   jiraEmail: '',
   jiraApiToken: '',
+  systemPrompts: {},
 };
 
 interface StoredShape {
@@ -33,6 +37,7 @@ interface StoredShape {
   anthropicFastModel?: string;
   jiraBaseUrl?: string;
   jiraEmail?: string;
+  systemPrompts?: Record<string, string>;
   // secrets stored as base64 ciphertext (safeStorage) or '' when unset
   anthropicApiKeyEnc?: string;
   githubTokenEnc?: string;
@@ -79,6 +84,8 @@ export function loadSettings(): Settings {
       jiraBaseUrl: raw.jiraBaseUrl || '',
       jiraEmail: raw.jiraEmail || '',
       jiraApiToken: decrypt(raw.jiraApiTokenEnc),
+      systemPrompts:
+        raw.systemPrompts && typeof raw.systemPrompts === 'object' ? { ...raw.systemPrompts } : {},
     };
   } catch {
     return { ...DEFAULTS };
@@ -86,11 +93,17 @@ export function loadSettings(): Settings {
 }
 
 export function saveSettings(next: Settings): void {
+  // Keep only non-empty overrides so a cleared field reverts to the default.
+  const prompts: Record<string, string> = {};
+  for (const [k, v] of Object.entries(next.systemPrompts ?? {})) {
+    if (typeof v === 'string' && v.trim()) prompts[k] = v;
+  }
   const stored: StoredShape = {
     anthropicModel: next.anthropicModel || DEFAULTS.anthropicModel,
     anthropicFastModel: next.anthropicFastModel || DEFAULTS.anthropicFastModel,
     jiraBaseUrl: next.jiraBaseUrl || '',
     jiraEmail: next.jiraEmail || '',
+    systemPrompts: prompts,
     anthropicApiKeyEnc: encrypt(next.anthropicApiKey),
     githubTokenEnc: encrypt(next.githubToken),
     jiraApiTokenEnc: encrypt(next.jiraApiToken),

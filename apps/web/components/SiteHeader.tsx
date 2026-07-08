@@ -9,6 +9,7 @@ const NAV = [
   { href: '/testcases', label: 'Test Cases' },
   { href: '/generator', label: 'Framework Generator' },
   { href: '/impact', label: 'Impact analyser' },
+  { href: '/system-prompts', label: 'System Prompts' },
   { href: '/consumption', label: 'Usage' },
 ];
 

@@ -88,16 +88,59 @@ export function TestCaseGenerator() {
   const [jiraTicket, setJiraTicket] = useState('');
   const [jiraBusy, setJiraBusy] = useState(false);
   const [jiraErr, setJiraErr] = useState<string | null>(null);
+  const [jiraResults, setJiraResults] = useState<Array<{ key: string; summary: string }>>([]);
+  const [jiraSearching, setJiraSearching] = useState(false);
+  // Set right after a pick/import so the follow-up value change doesn't re-open
+  // the dropdown for the value we just chose.
+  const jiraSuppress = useRef(false);
 
-  async function importFromJira() {
-    if (!jiraTicket.trim()) return;
+  // Debounced typeahead: query Jira for matching tickets as the user types.
+  useEffect(() => {
+    if (!jiraOpen) return;
+    const q = jiraTicket.trim();
+    if (jiraSuppress.current) {
+      jiraSuppress.current = false;
+      return;
+    }
+    if (q.length < 2) {
+      setJiraResults([]);
+      setJiraSearching(false);
+      return;
+    }
+    let alive = true;
+    setJiraSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/testcases/jira-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+        });
+        const data = await res.json();
+        if (alive) setJiraResults(Array.isArray(data.results) ? data.results : []);
+      } catch {
+        if (alive) setJiraResults([]);
+      } finally {
+        if (alive) setJiraSearching(false);
+      }
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [jiraTicket, jiraOpen]);
+
+  async function importFromJira(ticket?: string) {
+    const key = (ticket ?? jiraTicket).trim();
+    if (!key) return;
     setJiraBusy(true);
     setJiraErr(null);
+    setJiraResults([]);
     try {
       const res = await fetch('/api/testcases/jira-import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticket: jiraTicket.trim() }),
+        body: JSON.stringify({ ticket: key }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
@@ -112,6 +155,13 @@ export function TestCaseGenerator() {
     } finally {
       setJiraBusy(false);
     }
+  }
+
+  function pickTicket(key: string) {
+    jiraSuppress.current = true;
+    setJiraTicket(key);
+    setJiraResults([]);
+    void importFromJira(key);
   }
 
   // Lazy-load the default system prompt into the editor the first time the
@@ -608,20 +658,42 @@ export function TestCaseGenerator() {
         {jiraOpen && (
           <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
             <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">
-              Jira ticket — paste a key or URL
+              Jira ticket — search by key or title, or paste a URL
             </label>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                type="text"
-                value={jiraTicket}
-                onChange={(e) => setJiraTicket(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && importFromJira()}
-                placeholder="e.g. PROJ-123 or https://your-org.atlassian.net/browse/PROJ-123"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-              />
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={jiraTicket}
+                  onChange={(e) => setJiraTicket(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && importFromJira()}
+                  placeholder="Start typing — e.g. PROJ-1, “login page”, or a ticket URL"
+                  autoComplete="off"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                />
+                {(jiraSearching || jiraResults.length > 0) && (
+                  <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                    {jiraSearching && jiraResults.length === 0 && (
+                      <li className="px-3 py-2 text-sm text-slate-400">Searching…</li>
+                    )}
+                    {jiraResults.map((r) => (
+                      <li key={r.key}>
+                        <button
+                          type="button"
+                          onClick={() => pickTicket(r.key)}
+                          className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition hover:bg-indigo-50"
+                        >
+                          <span className="shrink-0 font-mono text-xs font-semibold text-indigo-600">{r.key}</span>
+                          <span className="truncate text-slate-600">{r.summary}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               <button
                 type="button"
-                onClick={importFromJira}
+                onClick={() => importFromJira()}
                 disabled={jiraBusy || !jiraTicket.trim()}
                 className="shrink-0 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
               >
