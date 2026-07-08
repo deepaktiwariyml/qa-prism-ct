@@ -1,4 +1,5 @@
 import { GeneratorConfigurator } from '@/components/GeneratorConfigurator';
+import { SharedFrameworkCard } from '@/components/SharedFrameworkCard';
 
 export const metadata = { title: 'Framework generator — QA Prism' };
 
@@ -16,6 +17,10 @@ export default function GeneratorPage() {
 
       <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-6">
         <GeneratorConfigurator />
+      </div>
+
+      <div className="mt-8">
+        <SharedFrameworkCard />
       </div>
     </div>
   );

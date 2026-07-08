@@ -5,7 +5,12 @@ import { SelectionSchema } from '@qa-prism/core';
 import { getPrisma, Prisma } from '@qa-prism/db';
 import { generate, loadRegistry, zipDir } from '@qa-prism/generator';
 import { analyzePr } from '@qa-prism/impact-analyser';
-import { createLlmClient, setUsageRecorder, type TokenUsage } from '@qa-prism/llm';
+import {
+  createLlmClient,
+  setUsageRecorder,
+  DEFAULT_TESTCASE_SYSTEM,
+  type TokenUsage,
+} from '@qa-prism/llm';
 import { buildHtmlReport, type ReportScan } from './report.js';
 import type { Queue } from 'bullmq';
 import type { ScanJobData } from './queue.js';
@@ -25,6 +30,12 @@ const FunWordsBody = z.object({
 const TestCasesBody = z.object({
   description: z.string().min(3).max(20_000),
   context: z.string().max(200).optional(),
+  system: z.string().min(1).max(20_000).optional(), // override the default QA system prompt
+  format: z.enum(['standard', 'bdd']).optional(),
+});
+
+const ExplainFeatureBody = z.object({
+  description: z.string().min(3).max(20_000),
 });
 
 const FillColumnsBody = z.object({
@@ -64,6 +75,13 @@ function sanitizeFunWords(raw: unknown[], minLen: number, maxLen: number, count:
     if (out.length >= count) break;
   }
   return out;
+}
+
+/** Strip a wrapping ```lang … ``` code fence if the model added one. */
+function stripCodeFence(s: string): string {
+  const t = s.trim();
+  const m = t.match(/^```[^\n]*\n([\s\S]*?)\n?```$/);
+  return (m ? m[1]! : t).trim();
 }
 
 /** Attach existing-finding ids that overlap an impact area's files/name. */
@@ -313,6 +331,8 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     const parsed = TestCasesBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
     const { description, context } = parsed.data;
+    const system = parsed.data.system?.trim() || DEFAULT_TESTCASE_SYSTEM;
+    const bdd = parsed.data.format === 'bdd';
     try {
       const llm = createLlmClient();
       const schema = z.object({
@@ -326,20 +346,57 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
           .min(1)
           .max(200),
       });
+      // The output shape is app-controlled so it fits the results table,
+      // regardless of the (possibly user-overridden) system prompt above.
+      const outputInstruction = bdd
+        ? 'For each test case, "title" must be a COMPLETE, atomic Gherkin scenario as multi-line text starting with "Scenario:" (or "Scenario Outline:") followed by Given/When/Then/And steps (use real newlines "\\n"). Classify each as "positive", "negative", or "edge". Cover positive, negative, edge, state-transition, resiliency, accessibility, security, and concurrency scenarios.'
+        : 'For each test case, "title" is a single concise ONE-LINE sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states).';
       let usage: TokenUsage | undefined;
       const result = await llm.completeJSON({
         operation: 'testcases.generate',
         onUsage: (u) => (usage = u),
-        system:
-          'You are a senior QA engineer. Given a feature or requirement, produce a COMPREHENSIVE set of clear, ONE-LINE manual test cases a tester can execute — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). Each title is a single concise sentence (imperative, no numbering, no steps). Classify each as "positive" (happy path / valid), "negative" (invalid input, errors, auth/permission failures), or "edge" (boundaries, limits, concurrency, unusual states). Cover all three thoroughly.',
-        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
+        system,
+        prompt: `${context ? `Context: ${context}\n\n` : ''}Description:\n${description}\n\nProduce a COMPREHENSIVE set of manual test cases — generate as many distinct, valuable cases as the feature warrants (commonly 25–60+ for a non-trivial feature; do not artificially limit the count). ${outputInstruction}\n\nReturn JSON: {"testcases":[{"title":"...","type":"positive|negative|edge"}, ...]}.`,
         schema,
       });
       const testcases = result.testcases
-        .map((t) => ({ title: t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(), type: t.type }))
+        .map((t) => ({
+          // Only strip leading list markers for plain one-liners; keep Gherkin text intact.
+          title: bdd ? t.title.trim() : t.title.replace(/^\s*[-*\d.)]+\s*/, '').trim(),
+          type: t.type,
+        }))
         .filter((t) => t.title.length > 0)
         .slice(0, 200);
       return { testcases, usage };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Return the default QA system prompt so the UI can show it as an editable,
+  // overridable default (single source of truth).
+  app.get('/testcases/system-prompt', async () => ({ prompt: DEFAULT_TESTCASE_SYSTEM }));
+
+  // Explain a feature in plain language for any audience (beginner → director).
+  app.post('/testcases/explain-feature', async (req, reply) => {
+    const parsed = ExplainFeatureBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    try {
+      const llm = createLlmClient();
+      let usage: TokenUsage | undefined;
+      // Plain-text completion (not JSON): the explanation is a long multi-line
+      // Markdown string, which models often fail to escape inside JSON. Asking
+      // for the Markdown directly is far more reliable.
+      const raw = await llm.complete({
+        operation: 'Explain Feature',
+        onUsage: (u) => (usage = u),
+        system:
+          'You explain software features in plain, simple language that ANY audience can follow — a beginner, a manager, a lead, and a director alike. Avoid jargon; when a technical term is unavoidable, define it briefly. Use everyday analogies and at least one concrete example. Format the answer as GitHub-flavored Markdown with these bold section labels, each on its own line and separated by a blank line: **In simple terms** (1-2 sentences), **How it works** (a few plain steps as a numbered list), **Example** (a concrete walkthrough), and **Why it matters** (business value, as bullet points). Keep it concise and friendly. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+        prompt: `Explain this feature so everyone understands it:\n${parsed.data.description}`,
+      });
+      const explanation = stripCodeFence(raw);
+      if (!explanation) throw new Error('empty explanation from model');
+      return { explanation, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -408,17 +465,19 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
     if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
     try {
       const llm = createLlmClient();
-      const schema = z.object({ explanation: z.string().min(1) });
       let usage: TokenUsage | undefined;
-      const result = await llm.completeJSON({
+      // Plain-text completion (not JSON): a multi-line Markdown explanation is
+      // unreliable to round-trip through JSON, so ask for the Markdown directly.
+      const raw = await llm.complete({
         operation: 'testcases.explain',
         onUsage: (u) => (usage = u),
         system:
-          'You are a senior QA engineer. Given a one-line manual test case, explain it clearly and practically for a tester: what it verifies, any preconditions, the steps to execute, and the expected result. Keep it concise and well-structured (a short paragraph or a few labelled lines). Return plain text in "explanation".',
-        prompt: `Explain this test case:\n"${parsed.data.testcase}"\n\nReturn JSON: {"explanation":"..."}.`,
-        schema,
+          'You are a senior QA engineer. Explain a one-line manual test case clearly and practically for a tester. Format the answer as Markdown with these bold section labels, EACH ON ITS OWN LINE and separated by a blank line, never one run-on paragraph:\n\n**What it verifies**\n<1-2 sentences>\n\n**Preconditions**\n- <bullet>\n- <bullet>\n\n**Steps**\n1. <step>\n2. <step>\n\n**Expected Result**\n- <bullet or short sentence>\n\nKeep it concise. Respond with the Markdown directly — do NOT wrap it in code fences or JSON.',
+        prompt: `Explain this test case:\n"${parsed.data.testcase}"`,
       });
-      return { explanation: result.explanation, usage };
+      const explanation = stripCodeFence(raw);
+      if (!explanation) throw new Error('empty explanation from model');
+      return { explanation, usage };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
