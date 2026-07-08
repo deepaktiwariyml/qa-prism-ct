@@ -4,7 +4,6 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
 import { resetAnthropicClient } from '@qa-prism/llm';
 import { buildDesktopApi } from './api-server.js';
 import { loadSettings, saveSettings, settingsToEnv, hasApiKey, type Settings } from './settings.js';
@@ -58,19 +57,15 @@ function generatorRoot(): string {
     : join(__dirname, '..', '..', '..', 'packages', 'generator');
 }
 
-/** Locate the Next server we run for the UI. Standalone build when packaged,
- *  the app's own `next start` in development. */
-function resolveWeb(): { mode: 'standalone' | 'dev'; entry: string; cwd: string } {
-  // Packaged: the Next standalone server is bundled under resources/web. In a
-  // monorepo the server lives at <standalone>/apps/web/server.js.
-  const standalone = join(process.resourcesPath ?? '', 'web', 'apps', 'web', 'server.js');
-  if (app.isPackaged && existsSync(standalone)) {
-    return { mode: 'standalone', entry: standalone, cwd: dirname(standalone) };
+/** Locate the Next CLI + app dir we run `next start` against. Packaged: the
+ *  symlink-free `pnpm deploy` tree under resources/web. Dev: the workspace app. */
+function resolveWeb(): { entry: string; cwd: string } {
+  if (app.isPackaged) {
+    const webRoot = join(process.resourcesPath, 'web');
+    return { entry: join(webRoot, 'node_modules', 'next', 'dist', 'bin', 'next'), cwd: webRoot };
   }
-  // Development: run the workspace web app's built server via `next start`.
   const webDir = join(__dirname, '..', '..', 'web');
-  const nextBin = require.resolve('next/dist/bin/next', { paths: [webDir] });
-  return { mode: 'dev', entry: nextBin, cwd: webDir };
+  return { entry: require.resolve('next/dist/bin/next', { paths: [webDir] }), cwd: webDir };
 }
 
 async function startWeb(): Promise<void> {
@@ -85,7 +80,7 @@ async function startWeb(): Promise<void> {
     API_INTERNAL_URL: `http://127.0.0.1:${apiPort}`,
     DESKTOP_MODE: '1',
   };
-  const args = web.mode === 'standalone' ? [web.entry] : [web.entry, 'start', '-p', String(webPort)];
+  const args = [web.entry, 'start', '-p', String(webPort)];
   // In dev we have a real `node`; when packaged we run Node via Electron.
   const cmd = app.isPackaged ? process.execPath : 'node';
   if (app.isPackaged) env.ELECTRON_RUN_AS_NODE = '1';
