@@ -144,7 +144,7 @@ function openSettingsWindow(): void {
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
-      preload: join(__dirname, 'preload.cjs'),
+      preload: join(__dirname, '..', 'preload.cjs'),
     },
   });
   void settingsWindow.loadFile(join(__dirname, '..', 'settings.html'));
