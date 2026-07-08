@@ -32,3 +32,14 @@ body {
 .app-no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* Desktop runs edge-to-edge. Each page centers its content with a max-width
+   cap (mx-auto max-w-*) that leaves large side gutters — fine for the web, too
+   wide-margined for a native window. Drop the cap on the page's own root
+   container so content fills the window; the existing px-* padding keeps a
+   small, uniform gutter so nothing sits flush against the edge. Only the
+   outermost container is targeted, so inner readability widths (paragraphs,
+   modals) are untouched. */
+body.app-desktop .page-shell > * {
+  max-width: none !important;
+}

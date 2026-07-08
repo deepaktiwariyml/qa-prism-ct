@@ -44,9 +44,10 @@ export function SiteHeader({
       }`}
     >
       <div
-        className={`mx-auto flex max-w-6xl items-center justify-between py-3 pr-6 ${
-          // Leave room for the macOS traffic-light buttons when framing our own header.
-          desktop ? 'pl-20' : 'pl-6'
+        className={`mx-auto flex items-center justify-between py-3 pr-6 ${
+          // Desktop is full-width (no max-width cap); leave room for the macOS
+          // traffic-light buttons on the left when framing our own header.
+          desktop ? 'max-w-none pl-20' : 'max-w-6xl pl-6'
         }`}
       >
         <Link href="/" className="app-no-drag flex shrink-0 items-center gap-2.5">
