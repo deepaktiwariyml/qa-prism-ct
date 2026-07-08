@@ -188,6 +188,25 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/breakage-analyser:
+    dependencies:
+      '@qa-prism/core':
+        specifier: workspace:*
+        version: link:../core
+      '@qa-prism/impact-analyser':
+        specifier: workspace:*
+        version: link:../impact-analyser
+      '@qa-prism/llm':
+        specifier: workspace:*
+        version: link:../llm
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      vitest:
+        specifier: ^2.1.5
+        version: 2.1.9(@types/node@22.20.0)
+
   packages/core:
     dependencies:
       zod:

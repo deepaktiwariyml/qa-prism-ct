@@ -12,6 +12,12 @@
 
 import { DEFAULT_TESTCASE_SYSTEM } from './testcase-system.js';
 import { IMPACT_ANALYSIS_SYSTEM } from './impact-analysis.js';
+import {
+  BREAKAGE_EXTRACT_CHANGE_SYSTEM,
+  BREAKAGE_EXTRACT_REQUIREMENTS_SYSTEM,
+  BREAKAGE_EXTRACT_TESTCASES_SYSTEM,
+  BREAKAGE_ANALYZE_SYSTEM,
+} from './breakage.js';
 
 // --- Inline prompt defaults (previously scattered across the API servers) ---
 
@@ -76,6 +82,30 @@ export const SYSTEM_PROMPTS: readonly SystemPromptDef[] = [
     label: 'Impact Analysis',
     description: 'Turns a GitHub pull-request diff into a what-changed / what-is-impacted / testing-checklist report.',
     default: IMPACT_ANALYSIS_SYSTEM,
+  },
+  {
+    key: 'breakage.extract-change',
+    label: 'Breakage: Extract Change',
+    description: 'Extracts structured change facts (APIs, DB, validations, flags, downstream hints) from a PR diff.',
+    default: BREAKAGE_EXTRACT_CHANGE_SYSTEM,
+  },
+  {
+    key: 'breakage.extract-requirements',
+    label: 'Breakage: Extract Requirements',
+    description: 'Extracts requirements, flows, and acceptance criteria from a requirement or design document.',
+    default: BREAKAGE_EXTRACT_REQUIREMENTS_SYSTEM,
+  },
+  {
+    key: 'breakage.extract-testcases',
+    label: 'Breakage: Extract Test Cases',
+    description: 'Normalizes existing test cases from an uploaded document into a structured list.',
+    default: BREAKAGE_EXTRACT_TESTCASES_SYSTEM,
+  },
+  {
+    key: 'breakage.analyze',
+    label: "Breakage: What's Broken Analysis",
+    description: 'Predicts broken areas, impacted tests, missing coverage, risk, and a regression suite from all inputs.',
+    default: BREAKAGE_ANALYZE_SYSTEM,
   },
 ] as const;
 

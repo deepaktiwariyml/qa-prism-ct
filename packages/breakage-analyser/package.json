@@ -1,0 +1,30 @@
+{
+  "name": "@qa-prism/breakage-analyser",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@qa-prism/core": "workspace:*",
+    "@qa-prism/impact-analyser": "workspace:*",
+    "@qa-prism/llm": "workspace:*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.5"
+  }
+}
