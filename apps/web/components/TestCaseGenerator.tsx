@@ -84,6 +84,35 @@ export function TestCaseGenerator() {
     null,
   );
   const [featureCopied, setFeatureCopied] = useState(false);
+  const [jiraOpen, setJiraOpen] = useState(false);
+  const [jiraTicket, setJiraTicket] = useState('');
+  const [jiraBusy, setJiraBusy] = useState(false);
+  const [jiraErr, setJiraErr] = useState<string | null>(null);
+
+  async function importFromJira() {
+    if (!jiraTicket.trim()) return;
+    setJiraBusy(true);
+    setJiraErr(null);
+    try {
+      const res = await fetch('/api/testcases/jira-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket: jiraTicket.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API ${res.status}`);
+      const summary = String(data.summary ?? '').trim();
+      const desc = String(data.description ?? '').trim();
+      const composed = [summary && `Feature: ${summary}`, desc].filter(Boolean).join('\n\n');
+      setDescription(composed || summary || desc);
+      setJiraOpen(false);
+      setJiraTicket('');
+    } catch (err) {
+      setJiraErr(String(err instanceof Error ? err.message : err));
+    } finally {
+      setJiraBusy(false);
+    }
+  }
 
   // Lazy-load the default system prompt into the editor the first time the
   // Advanced panel is opened (and it hasn't been customised yet).
@@ -556,11 +585,14 @@ export function TestCaseGenerator() {
           </button>
           <button
             type="button"
-            disabled
-            title="Jira import — coming soon (needs Atlassian setup)"
-            className="cursor-not-allowed rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-400"
+            onClick={() => {
+              setJiraErr(null);
+              setJiraOpen((o) => !o);
+            }}
+            title="Pull a Jira ticket's summary and description into the prompt"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
-            Import from Jira (soon)
+            Import from Jira
           </button>
           <button
             type="button"
@@ -572,6 +604,37 @@ export function TestCaseGenerator() {
             💡 Explain Feature
           </button>
         </div>
+
+        {jiraOpen && (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">
+              Jira ticket — paste a key or URL
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                type="text"
+                value={jiraTicket}
+                onChange={(e) => setJiraTicket(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && importFromJira()}
+                placeholder="e.g. PROJ-123 or https://your-org.atlassian.net/browse/PROJ-123"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={importFromJira}
+                disabled={jiraBusy || !jiraTicket.trim()}
+                className="shrink-0 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+              >
+                {jiraBusy ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+            {jiraErr && <p className="mt-2 text-sm text-red-600">{jiraErr}</p>}
+            <p className="mt-2 text-xs text-slate-400">
+              Pulls the ticket’s summary and description into the prompt above. Set your Jira site
+              URL, email, and API token in Settings first.
+            </p>
+          </div>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">

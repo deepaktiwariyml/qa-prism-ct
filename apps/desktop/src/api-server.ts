@@ -34,6 +34,59 @@ const FillColumnsBody = z.object({
 const CombineBody = z.object({ testcases: z.array(z.string().min(1)).min(2).max(25) });
 const ExplainBody = z.object({ testcase: z.string().min(1).max(2000) });
 const ImpactBody = z.object({ prUrl: z.string().min(1), githubToken: z.string().optional() });
+const JiraImportBody = z.object({ ticket: z.string().min(1).max(300) });
+
+/** Pull a Jira issue key (e.g. ABC-123) out of a raw key or a ticket URL. */
+function extractJiraKey(input: string): string {
+  const m = input.match(/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  return m ? m[1]!.toUpperCase() : '';
+}
+
+/** Minimal HTML→text for Jira rendered descriptions. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Fetch a Jira issue's summary + description via the Cloud REST API. */
+async function fetchJiraTicket(rawInput: string): Promise<{ key: string; summary: string; description: string }> {
+  const base = (process.env.JIRA_BASE_URL || '').replace(/\/+$/, '');
+  const email = process.env.JIRA_EMAIL || '';
+  const token = process.env.JIRA_API_TOKEN || '';
+  if (!base || !email || !token) {
+    throw new HttpError(400, 'Jira is not configured. Add your Jira site URL, email, and API token in Settings.');
+  }
+  const key = extractJiraKey(rawInput);
+  if (!key) throw new HttpError(400, 'Enter a Jira ticket key (e.g. ABC-123) or a ticket URL.');
+  const auth = Buffer.from(`${email}:${token}`).toString('base64');
+  const url = `${base}/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary&expand=renderedFields`;
+  const res = await fetch(url, { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } });
+  if (res.status === 401 || res.status === 403) {
+    throw new HttpError(400, 'Jira authentication failed — check your email and API token in Settings.');
+  }
+  if (res.status === 404) throw new HttpError(404, `Jira ticket ${key} was not found (or you lack access).`);
+  if (!res.ok) throw new HttpError(502, `Jira returned ${res.status}.`);
+  const data = (await res.json()) as {
+    fields?: { summary?: string };
+    renderedFields?: { description?: string };
+  };
+  return {
+    key,
+    summary: data.fields?.summary ?? '',
+    description: htmlToText(data.renderedFields?.description ?? ''),
+  };
+}
 
 class HttpError extends Error {
   constructor(
@@ -212,6 +265,11 @@ export function buildDesktopApi(usageFile: string): Server {
           return sendJson(res, 200, await guard(() => explainTestcase(body)));
         case '/testcases/explain-feature':
           return sendJson(res, 200, await guard(() => explainFeature(body)));
+        case '/testcases/jira-import': {
+          const parsed = JiraImportBody.safeParse(body);
+          if (!parsed.success) return sendJson(res, 400, { error: 'invalid body' });
+          return sendJson(res, 200, await fetchJiraTicket(parsed.data.ticket));
+        }
         case '/impact':
           try {
             return sendJson(res, 200, await impact(body));

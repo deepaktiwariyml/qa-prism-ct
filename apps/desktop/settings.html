@@ -36,6 +36,8 @@
       .note { font-size: 12px; color: #64748b; margin-top: 8px; line-height: 1.5; }
       .saved { color: #059669; font-size: 13px; font-weight: 600; }
       a { color: #4f46e5; }
+      label .howto { float: right; font-weight: 500; font-size: 11px; }
+      label .howto::after { content: " ↗"; }
     </style>
   </head>
   <body>
@@ -57,22 +59,39 @@
       </div>
     </div>
 
-    <label>GitHub token <span class="hint">— optional, for PR impact on private repos</span></label>
+    <label>GitHub token <span class="hint">— optional, for PR impact on private repos</span>
+      <a class="howto" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">How to get</a></label>
     <input id="githubToken" type="password" placeholder="ghp_…" autocomplete="off" spellcheck="false" />
 
-    <label>Jira base URL <span class="hint">— optional, for ticket links</span></label>
+    <label>Jira site URL <span class="hint">— for ticket import &amp; links</span>
+      <a class="howto" href="https://support.atlassian.com/jira-software-cloud/docs/what-is-a-jira-site/" target="_blank" rel="noreferrer">How to get</a></label>
     <input id="jiraBaseUrl" type="text" placeholder="https://your-org.atlassian.net" spellcheck="false" />
 
+    <div class="row">
+      <div>
+        <label>Jira email <span class="hint">— your Atlassian login email</span></label>
+        <input id="jiraEmail" type="text" placeholder="you@company.com" autocomplete="off" spellcheck="false" />
+      </div>
+      <div>
+        <label>Jira API token
+          <a class="howto" href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer">How to get</a></label>
+        <input id="jiraApiToken" type="password" placeholder="…" autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+
     <div class="actions">
-      <button id="save">Save &amp; restart</button>
+      <button id="save">Save</button>
       <button id="cancel" class="secondary">Cancel</button>
       <span id="status"></span>
     </div>
-    <p class="note">Saving restarts the app so the new settings take effect everywhere.</p>
+    <p class="note">Changes apply immediately — no restart needed.</p>
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const fields = ['anthropicApiKey', 'anthropicModel', 'anthropicFastModel', 'githubToken', 'jiraBaseUrl'];
+      const fields = [
+        'anthropicApiKey', 'anthropicModel', 'anthropicFastModel',
+        'githubToken', 'jiraBaseUrl', 'jiraEmail', 'jiraApiToken',
+      ];
 
       async function load() {
         const s = await window.qaprism.getSettings();

@@ -38,6 +38,8 @@ const ExplainFeatureBody = z.object({
   description: z.string().min(3).max(20_000),
 });
 
+const JiraImportBody = z.object({ ticket: z.string().min(1).max(300) });
+
 const FillColumnsBody = z.object({
   testcases: z.array(z.string().min(1)).min(1).max(200),
   columns: z.array(z.string().min(1)).min(1).max(12),
@@ -82,6 +84,29 @@ function stripCodeFence(s: string): string {
   const t = s.trim();
   const m = t.match(/^```[^\n]*\n([\s\S]*?)\n?```$/);
   return (m ? m[1]! : t).trim();
+}
+
+/** Pull a Jira issue key (e.g. ABC-123) out of a raw key or a ticket URL. */
+function extractJiraKey(input: string): string {
+  const m = input.match(/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  return m ? m[1]!.toUpperCase() : '';
+}
+
+/** Minimal HTML→text for Jira rendered descriptions. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Attach existing-finding ids that overlap an impact area's files/name. */
@@ -397,6 +422,43 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
       const explanation = stripCodeFence(raw);
       if (!explanation) throw new Error('empty explanation from model');
       return { explanation, usage };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Import a Jira ticket's summary + description to seed a test-case prompt.
+  app.post('/testcases/jira-import', async (req, reply) => {
+    const parsed = JiraImportBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body' });
+    const base = (process.env.JIRA_BASE_URL || '').replace(/\/+$/, '');
+    const email = process.env.JIRA_EMAIL || '';
+    const token = process.env.JIRA_API_TOKEN || '';
+    if (!base || !email || !token) {
+      return reply
+        .code(400)
+        .send({ error: 'Jira is not configured. Set JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN.' });
+    }
+    const key = extractJiraKey(parsed.data.ticket);
+    if (!key) return reply.code(400).send({ error: 'Enter a Jira ticket key (e.g. ABC-123) or a ticket URL.' });
+    try {
+      const auth = Buffer.from(`${email}:${token}`).toString('base64');
+      const url = `${base}/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary&expand=renderedFields`;
+      const res = await fetch(url, { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } });
+      if (res.status === 401 || res.status === 403) {
+        return reply.code(400).send({ error: 'Jira authentication failed — check the email and API token.' });
+      }
+      if (res.status === 404) return reply.code(404).send({ error: `Jira ticket ${key} not found (or no access).` });
+      if (!res.ok) return reply.code(502).send({ error: `Jira returned ${res.status}.` });
+      const data = (await res.json()) as {
+        fields?: { summary?: string };
+        renderedFields?: { description?: string };
+      };
+      return {
+        key,
+        summary: data.fields?.summary ?? '',
+        description: htmlToText(data.renderedFields?.description ?? ''),
+      };
     } catch (err) {
       return reply.code(502).send({ error: err instanceof Error ? err.message : String(err) });
     }

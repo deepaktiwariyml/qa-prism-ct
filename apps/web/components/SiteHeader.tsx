@@ -37,9 +37,18 @@ export function SiteHeader({
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-        <Link href="/" className="flex shrink-0 items-center gap-2.5">
+    <header
+      className={`sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur ${
+        desktop ? 'app-drag' : ''
+      }`}
+    >
+      <div
+        className={`mx-auto flex max-w-6xl items-center justify-between py-3 pr-6 ${
+          // Leave room for the macOS traffic-light buttons when framing our own header.
+          desktop ? 'pl-20' : 'pl-6'
+        }`}
+      >
+        <Link href="/" className="app-no-drag flex shrink-0 items-center gap-2.5">
           <Logo className="h-9 w-9" />
           <span className="flex items-center gap-2">
             <span className="text-[17px] font-semibold tracking-tight text-slate-900">
@@ -48,9 +57,12 @@ export function SiteHeader({
             <span className="hidden rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm sm:inline">
               {desktop ? 'QA Studio' : 'QA Prism'}
             </span>
+            <span className="hidden rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 sm:inline">
+              Internal use only
+            </span>
           </span>
         </Link>
-        <nav className="hidden items-center gap-0.5 md:flex">
+        <nav className="app-no-drag hidden items-center gap-0.5 md:flex">
           {authed &&
             nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/');
@@ -67,7 +79,7 @@ export function SiteHeader({
             );
           })}
         </nav>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="app-no-drag flex shrink-0 items-center gap-1">
           {desktop ? (
             <button
               onClick={openDesktopSettings}

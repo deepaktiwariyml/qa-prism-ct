@@ -143,8 +143,8 @@ function openSettingsWindow(): void {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 560,
-    height: 640,
+    width: 580,
+    height: 760,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -159,6 +159,11 @@ function openSettingsWindow(): void {
     },
   });
   void settingsWindow.loadFile(join(__dirname, '..', 'settings.html'));
+  // "How to get" links open in the system browser, not a new app window.
+  settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
   settingsWindow.on('closed', () => (settingsWindow = null));
 }
 

@@ -14,6 +14,8 @@ export interface Settings {
   anthropicFastModel: string;
   githubToken: string;
   jiraBaseUrl: string;
+  jiraEmail: string;
+  jiraApiToken: string;
 }
 
 const DEFAULTS: Settings = {
@@ -22,15 +24,19 @@ const DEFAULTS: Settings = {
   anthropicFastModel: 'claude-haiku-4-5',
   githubToken: '',
   jiraBaseUrl: '',
+  jiraEmail: '',
+  jiraApiToken: '',
 };
 
 interface StoredShape {
   anthropicModel?: string;
   anthropicFastModel?: string;
   jiraBaseUrl?: string;
+  jiraEmail?: string;
   // secrets stored as base64 ciphertext (safeStorage) or '' when unset
   anthropicApiKeyEnc?: string;
   githubTokenEnc?: string;
+  jiraApiTokenEnc?: string;
 }
 
 function settingsPath(): string {
@@ -71,6 +77,8 @@ export function loadSettings(): Settings {
       anthropicFastModel: raw.anthropicFastModel || DEFAULTS.anthropicFastModel,
       githubToken: decrypt(raw.githubTokenEnc),
       jiraBaseUrl: raw.jiraBaseUrl || '',
+      jiraEmail: raw.jiraEmail || '',
+      jiraApiToken: decrypt(raw.jiraApiTokenEnc),
     };
   } catch {
     return { ...DEFAULTS };
@@ -82,8 +90,10 @@ export function saveSettings(next: Settings): void {
     anthropicModel: next.anthropicModel || DEFAULTS.anthropicModel,
     anthropicFastModel: next.anthropicFastModel || DEFAULTS.anthropicFastModel,
     jiraBaseUrl: next.jiraBaseUrl || '',
+    jiraEmail: next.jiraEmail || '',
     anthropicApiKeyEnc: encrypt(next.anthropicApiKey),
     githubTokenEnc: encrypt(next.githubToken),
+    jiraApiTokenEnc: encrypt(next.jiraApiToken),
   };
   const dir = app.getPath('userData');
   mkdirSync(dir, { recursive: true });
@@ -99,6 +109,8 @@ export function settingsToEnv(s: Settings): Record<string, string> {
   if (s.anthropicApiKey) env.ANTHROPIC_API_KEY = s.anthropicApiKey;
   if (s.githubToken) env.GITHUB_TOKEN = s.githubToken;
   if (s.jiraBaseUrl) env.JIRA_BASE_URL = s.jiraBaseUrl;
+  if (s.jiraEmail) env.JIRA_EMAIL = s.jiraEmail;
+  if (s.jiraApiToken) env.JIRA_API_TOKEN = s.jiraApiToken;
   return env;
 }
 
