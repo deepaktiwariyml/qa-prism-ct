@@ -5,12 +5,13 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Logo } from './Logo';
 
-const NAV = [
+type NavItem = { href: string; label: string; ai?: boolean };
+const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Scan Website' },
-  { href: '/testcases', label: 'Test Cases' },
+  { href: '/testcases', label: 'Test Cases', ai: true },
   { href: '/generator', label: 'Framework Generator' },
-  { href: '/impact', label: 'Impact analyser' },
-  { href: '/whats-broken', label: 'Predictive Analysis' },
+  { href: '/impact', label: 'Impact analyser', ai: true },
+  { href: '/whats-broken', label: 'Predictive Analysis', ai: true },
   { href: '/system-prompts', label: 'System Prompts' },
   { href: '/consumption', label: 'Usage' },
 ];
@@ -89,11 +90,16 @@ export function SiteHeader({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
                   active ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {item.label}
+                {item.ai && (
+                  <span title="AI-powered" aria-label="AI-powered" className="text-[11px] leading-none">
+                    ✨
+                  </span>
+                )}
               </Link>
             );
           })}
