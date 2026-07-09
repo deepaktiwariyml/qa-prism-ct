@@ -46,7 +46,7 @@ interface Result {
 }
 
 interface PrRow {
-  provider: 'github' | 'paste';
+  provider: 'github' | 'compare' | 'paste';
   url: string;
   rawDiff: string;
   repoContext: string;
@@ -61,7 +61,7 @@ function riskBadge(level: RiskLevel): string {
 const HOW_STEPS: Array<{ title: string; body: string }> = [
   {
     title: 'Add your inputs',
-    body: 'Add one or more pull requests (a GitHub link, or paste a diff for Bitbucket / GitLab / Azure), pick Jira tickets or an epic, and upload your test cases and requirement/design docs. Anything else worth knowing goes in the “Additional context” box. Use whatever mix you have — nothing is required.',
+    body: 'Add one or more pull requests (a GitHub link, a whole release via a Compare link, or a pasted diff for Bitbucket / GitLab / Azure), pick Jira tickets or an epic, and upload your test cases and requirement/design docs. Anything else worth knowing goes in the “Additional context” box. Use whatever mix you have — nothing is required.',
   },
   {
     title: 'Your files are read in your browser',
@@ -99,8 +99,34 @@ const TIPS: string[] = [
   'Treat it as a smart head-start, not a guarantee. Start by verifying the highest-risk items it flags.',
 ];
 
-function HelpModal({ which, onClose }: { which: 'how' | 'tips'; onClose: () => void }) {
-  const isHow = which === 'how';
+const COMPARE_STEPS: Array<{ title: string; body: string }> = [
+  { title: 'Open your repository on GitHub', body: 'Go to the repo you want to analyze.' },
+  {
+    title: 'Open the Compare page',
+    body: 'Click the branch dropdown and choose “Compare”, or just add /compare to the repo’s URL in the address bar.',
+  },
+  {
+    title: 'Pick the “base” — where to compare from',
+    body: 'Usually your last release: a tag like v1.2.0 or a release branch. This is the starting point.',
+  },
+  {
+    title: 'Pick the “head” — where to compare to',
+    body: 'Usually main (or the new release branch). GitHub now shows every change between the two points.',
+  },
+  {
+    title: 'Copy the URL and paste it here',
+    body: 'Copy it straight from your browser’s address bar. It looks like: https://github.com/org/repo/compare/v1.2.0...main',
+  },
+];
+
+const HELP_TITLES: Record<'how' | 'tips' | 'compare', string> = {
+  how: 'How it works',
+  tips: 'Tips for better results',
+  compare: 'How to get a compare URL',
+};
+
+function HelpModal({ which, onClose }: { which: 'how' | 'tips' | 'compare'; onClose: () => void }) {
+  const steps = which === 'how' ? HOW_STEPS : which === 'compare' ? COMPARE_STEPS : null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
@@ -108,15 +134,15 @@ function HelpModal({ which, onClose }: { which: 'how' | 'tips'; onClose: () => v
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">{isHow ? 'How it works' : 'Tips for better results'}</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{HELP_TITLES[which]}</h2>
           <button onClick={onClose} aria-label="Close" className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             ✕
           </button>
         </div>
         <div className="overflow-auto px-5 py-4">
-          {isHow ? (
+          {steps ? (
             <ol className="space-y-4">
-              {HOW_STEPS.map((s, i) => (
+              {steps.map((s, i) => (
                 <li key={i} className="flex gap-3">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-xs font-semibold text-white">
                     {i + 1}
@@ -160,7 +186,7 @@ export function WhatsBroken() {
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = usePersistentState<Result | null>('qa-prism:wb:result', null);
-  const [help, setHelp] = useState<'how' | 'tips' | null>(null);
+  const [help, setHelp] = useState<'how' | 'tips' | 'compare' | null>(null);
 
   // --- Jira typeahead (reuses the existing search endpoint) ---
   const [jiraQuery, setJiraQuery] = useState('');
@@ -219,7 +245,7 @@ export function WhatsBroken() {
   }
 
   const hasInput =
-    prs.some((p) => (p.provider === 'github' ? p.url.trim() : p.rawDiff.trim())) ||
+    prs.some((p) => (p.provider === 'paste' ? p.rawDiff.trim() : p.url.trim())) ||
     reqDocs.some((d) => d.text.trim()) ||
     tcDocs.some((d) => d.text.trim() || d.structured?.length) ||
     jiraSelected.length > 0 ||
@@ -233,11 +259,11 @@ export function WhatsBroken() {
     try {
       const payload = {
         prs: prs
-          .filter((p) => (p.provider === 'github' ? p.url.trim() : p.rawDiff.trim()))
+          .filter((p) => (p.provider === 'paste' ? p.rawDiff.trim() : p.url.trim()))
           .map((p) =>
-            p.provider === 'github'
-              ? { provider: 'github', url: p.url.trim() }
-              : { provider: 'paste', rawDiff: p.rawDiff, repoContext: p.repoContext.trim() || undefined },
+            p.provider === 'paste'
+              ? { provider: 'paste', rawDiff: p.rawDiff, repoContext: p.repoContext.trim() || undefined }
+              : { provider: p.provider, url: p.url.trim() },
           ),
         githubToken: githubToken.trim() || undefined,
         jira:
@@ -298,7 +324,7 @@ export function WhatsBroken() {
       {help && <HelpModal which={help} onClose={() => setHelp(null)} />}
 
       <div className="mt-8 space-y-6">
-        <PrSection prs={prs} setPr={setPr} addPr={addPr} removePr={removePr} githubToken={githubToken} setGithubToken={setGithubToken} />
+        <PrSection prs={prs} setPr={setPr} addPr={addPr} removePr={removePr} githubToken={githubToken} setGithubToken={setGithubToken} onCompareHelp={() => setHelp('compare')} />
 
         <JiraSection
           selected={jiraSelected}
@@ -354,8 +380,9 @@ function PrSection(props: {
   removePr: (i: number) => void;
   githubToken: string;
   setGithubToken: (v: string) => void;
+  onCompareHelp: () => void;
 }) {
-  const { prs, setPr, addPr, removePr, githubToken, setGithubToken } = props;
+  const { prs, setPr, addPr, removePr, githubToken, setGithubToken, onCompareHelp } = props;
   return (
     <SectionCard>
       <div className="flex items-center justify-between">
@@ -373,23 +400,28 @@ function PrSection(props: {
                 onChange={(e) => setPr(i, { provider: e.target.value as PrRow['provider'] })}
                 className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
               >
-                <option value="github">GitHub</option>
+                <option value="github">GitHub PR</option>
+                <option value="compare">Compare / Release</option>
                 <option value="paste">Paste diff</option>
               </select>
-              {pr.provider === 'github' ? (
-                <input
-                  type="text"
-                  value={pr.url}
-                  onChange={(e) => setPr(i, { url: e.target.value })}
-                  placeholder="https://github.com/org/repo/pull/123"
-                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
-                />
-              ) : (
+              {pr.provider === 'paste' ? (
                 <input
                   type="text"
                   value={pr.repoContext}
                   onChange={(e) => setPr(i, { repoContext: e.target.value })}
                   placeholder="Optional: what/where this diff is (e.g. Bitbucket · payments-service)"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={pr.url}
+                  onChange={(e) => setPr(i, { url: e.target.value })}
+                  placeholder={
+                    pr.provider === 'compare'
+                      ? 'https://github.com/org/repo/compare/v1.2.0...main'
+                      : 'https://github.com/org/repo/pull/123'
+                  }
                   className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
                 />
               )}
@@ -399,6 +431,14 @@ function PrSection(props: {
                 </button>
               )}
             </div>
+            {pr.provider === 'compare' && (
+              <p className="mt-1.5 text-xs text-slate-400">
+                Analyzes everything that changed between two points (e.g. your last release → main).{' '}
+                <button onClick={onCompareHelp} className="font-medium text-indigo-600 hover:underline">
+                  How to get this?
+                </button>
+              </p>
+            )}
             {pr.provider === 'paste' && (
               <textarea
                 value={pr.rawDiff}

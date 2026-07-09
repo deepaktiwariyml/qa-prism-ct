@@ -8,8 +8,10 @@ import { z } from 'zod';
 /** A single Pull Request source. GitHub is fetched natively; other providers
  *  come in via a pasted raw diff. */
 export const PrInputSchema = z.object({
-  provider: z.enum(['github', 'paste']),
-  url: z.string().max(500).optional(), // github
+  // 'github' = one PR (url is a PR link); 'compare' = a release/branch range
+  // (url is a GitHub compare link); 'paste' = a raw diff from any provider.
+  provider: z.enum(['github', 'paste', 'compare']),
+  url: z.string().max(500).optional(), // github PR link or compare link
   rawDiff: z.string().max(500_000).optional(), // paste
   repoContext: z.string().max(2_000).optional(), // optional note for pasted diffs
 });

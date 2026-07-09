@@ -5,6 +5,60 @@ import type { PrInput } from './types.js';
  *  PRs fit. Overridable via BREAKAGE_MAX_PATCH_CHARS. */
 const MAX_PATCH_CHARS = Number(process.env.BREAKAGE_MAX_PATCH_CHARS) || 120_000;
 
+const GH_API = 'https://api.github.com';
+function ghHeaders(token?: string): Record<string, string> {
+  const h: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'qa-prism',
+  };
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+}
+
+interface CompareRef {
+  owner: string;
+  repo: string;
+  base: string;
+  head: string;
+}
+
+/** Parse a GitHub compare URL into owner/repo/base/head, or null. Accepts the
+ *  three-dot (…) and two-dot (..) forms GitHub's Compare page produces. */
+export function parseCompareUrl(input: string): CompareRef | null {
+  const m = input.trim().match(/github\.com\/([^/]+)\/([^/]+)\/compare\/([^?#]+)/i);
+  if (!m) return null;
+  const rest = m[3]!;
+  const sep = rest.includes('...') ? '...' : rest.includes('..') ? '..' : null;
+  if (!sep) return null;
+  const i = rest.indexOf(sep);
+  const base = decodeURIComponent(rest.slice(0, i));
+  const head = decodeURIComponent(rest.slice(i + sep.length));
+  if (!base || !head) return null;
+  return { owner: m[1]!, repo: m[2]!, base, head };
+}
+
+/** Fetch the combined diff between two refs via GitHub's compare API. */
+async function fetchCompare(
+  ref: CompareRef,
+  token: string | undefined,
+  fetchImpl: FetchImpl,
+): Promise<{ files: ChangedFile[]; commitCount: number }> {
+  // Three-dot: everything on head since it diverged from base — the right
+  // "what changed in this release" view.
+  const url = `${GH_API}/repos/${ref.owner}/${ref.repo}/compare/${ref.base}...${ref.head}`;
+  const res = await fetchImpl(url, { headers: ghHeaders(token) });
+  if (res.status === 404)
+    throw new Error(`GitHub returned 404 comparing ${ref.base}…${ref.head} — private repo without a token, or an unknown ref.`);
+  if (!res.ok) throw new Error(`GitHub returned ${res.status} for the compare.`);
+  const data = (await res.json()) as {
+    files?: ChangedFile[];
+    total_commits?: number;
+    commits?: unknown[];
+  };
+  return { files: data.files ?? [], commitCount: data.total_commits ?? data.commits?.length ?? 0 };
+}
+
 export interface ResolvedPr {
   id: string; // stable evidence id: PR1, PR2, …
   label: string; // "owner/repo#123" or "Pasted diff 1"
@@ -81,6 +135,24 @@ export async function resolvePrs(
         url: pr.url,
         title: data.title,
         body: data.body,
+        diffText: bounded.text,
+        changedFiles: bounded.changed,
+        truncated: bounded.truncated,
+      });
+    } else if (pr.provider === 'compare') {
+      const ref = parseCompareUrl(pr.url ?? '');
+      if (!ref)
+        throw new Error(
+          `Not a GitHub compare URL: ${pr.url ?? '(empty)'} — use the repo's Compare page, e.g. https://github.com/org/repo/compare/v1.2.0...main`,
+        );
+      const { files, commitCount } = await fetchCompare(ref, githubToken, fetchImpl);
+      const bounded = boundGithubFiles(files);
+      out.push({
+        id,
+        label: `${ref.owner}/${ref.repo} ${ref.base}…${ref.head}`,
+        url: pr.url,
+        title: `Release diff ${ref.base}…${ref.head}${commitCount ? ` (${commitCount} commits)` : ''}`,
+        body: '',
         diffText: bounded.text,
         changedFiles: bounded.changed,
         truncated: bounded.truncated,
