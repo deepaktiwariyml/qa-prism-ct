@@ -57,6 +57,93 @@ function riskBadge(level: RiskLevel): string {
   return SEVERITY_BADGE[level.toLowerCase() as keyof typeof SEVERITY_BADGE] ?? SEVERITY_BADGE.info;
 }
 
+// Plain-language help, accurate to how the feature actually works.
+const HOW_STEPS: Array<{ title: string; body: string }> = [
+  {
+    title: 'Add your inputs',
+    body: 'Add one or more pull requests (a GitHub link, or paste a diff for Bitbucket / GitLab / Azure), pick Jira tickets or an epic, and upload your test cases and requirement/design docs. Anything else worth knowing goes in the “Additional context” box. Use whatever mix you have — nothing is required.',
+  },
+  {
+    title: 'Your files are read in your browser',
+    body: 'Excel, CSV, Word, PDF, Markdown, and JSON are read right here on your machine. Only the extracted text is sent for analysis — the original files never leave your computer.',
+  },
+  {
+    title: 'It studies each input on its own',
+    body: 'First it summarizes what each PR actually changes, pulls the requirements and acceptance criteria out of your documents, and tidies your uploaded test cases into a clean list.',
+  },
+  {
+    title: 'It pulls in your Jira',
+    body: 'If you selected tickets, it fetches their summary, description, acceptance criteria, labels, and linked issues. Choose an epic and it pulls in that epic’s child tickets too.',
+  },
+  {
+    title: 'It connects the dots',
+    body: 'Then it does one focused pass that links the code changes to your tests, requirements, and tickets — thinking about knock-on effects, not just the files that changed. For example, a change to invoice totals can ripple into discounts, taxes, and refunds.',
+  },
+  {
+    title: 'You get an actionable report',
+    body: 'An overall risk level, the areas most likely to break, impacted modules and APIs, which of your test cases to run (or new ones to add if you uploaded none), gaps with no coverage, and a suggested set of smoke and regression suites to run first.',
+  },
+  {
+    title: 'Every point is traceable',
+    body: 'Each finding links back to the exact PR, ticket, document, or test case it came from, so you can check the reasoning. Export the whole report to Markdown or PDF.',
+  },
+];
+
+const TIPS: string[] = [
+  'More inputs, sharper results. A PR on its own works, but adding requirements and your existing test cases makes the predictions far more grounded.',
+  'Upload your existing test cases so it can point to the exact ones to re-run. With none uploaded, it suggests brand-new tests to write instead.',
+  'Private GitHub repo? Add a GitHub token. On Bitbucket, GitLab, or Azure DevOps, paste the raw diff instead of a link.',
+  'Use “Additional context” for things the code and docs don’t say — like “this only affects mobile” or “the payments flow is in scope”.',
+  'Pick a Jira epic to pull in all its child tickets at once, instead of adding them one by one.',
+  'Larger inputs cost a little more and take a bit longer. Trim to what’s relevant for a faster, cheaper run.',
+  'Treat it as a smart head-start, not a guarantee. Start by verifying the highest-risk items it flags.',
+];
+
+function HelpModal({ which, onClose }: { which: 'how' | 'tips'; onClose: () => void }) {
+  const isHow = which === 'how';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h2 className="text-lg font-semibold text-slate-900">{isHow ? 'How it works' : 'Tips for better results'}</h2>
+          <button onClick={onClose} aria-label="Close" className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+        <div className="overflow-auto px-5 py-4">
+          {isHow ? (
+            <ol className="space-y-4">
+              {HOW_STEPS.map((s, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-xs font-semibold text-white">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <p className="font-medium text-slate-800">{s.title}</p>
+                    <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{s.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <ul className="space-y-3">
+              {TIPS.map((t, i) => (
+                <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-700">
+                  <span className="mt-0.5 shrink-0 text-indigo-500">•</span>
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WhatsBroken() {
   // Inputs (small, persisted). Tokens and parsed docs are not persisted.
   const [prs, setPrs] = usePersistentState<PrRow[]>('qa-prism:wb:prs', [{ ...EMPTY_PR }]);
@@ -73,6 +160,7 @@ export function WhatsBroken() {
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = usePersistentState<Result | null>('qa-prism:wb:result', null);
+  const [help, setHelp] = useState<'how' | 'tips' | null>(null);
 
   // --- Jira typeahead (reuses the existing search endpoint) ---
   const [jiraQuery, setJiraQuery] = useState('');
@@ -181,13 +269,33 @@ export function WhatsBroken() {
 
   return (
     <div>
-      <p className="text-sm font-medium text-indigo-600">Pre-QA regression radar</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Predictive Analysis</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-indigo-600">Pre-QA regression radar</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Predictive Analysis</h1>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => setHelp('how')}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            How it works
+          </button>
+          <button
+            onClick={() => setHelp('tips')}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            💡 Tips
+          </button>
+        </div>
+      </div>
       <p className="mt-3 max-w-2xl text-slate-600">
         Point it at your PRs, requirement docs, test cases, and Jira. It predicts what may be broken,
         which tests to run, what coverage is missing, and how risky the change is — every prediction
         citing its source.
       </p>
+
+      {help && <HelpModal which={help} onClose={() => setHelp(null)} />}
 
       <div className="mt-8 space-y-6">
         <PrSection prs={prs} setPr={setPr} addPr={addPr} removePr={removePr} githubToken={githubToken} setGithubToken={setGithubToken} />
