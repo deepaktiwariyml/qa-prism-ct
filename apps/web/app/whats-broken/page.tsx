@@ -3,7 +3,7 @@ import { INTERNAL_API } from '@/lib/proxy';
 import { WhatsBroken } from '@/components/WhatsBroken';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: "What's Broken — QA Prism" };
+export const metadata = { title: 'Predictive Analysis — QA Prism' };
 
 async function isEnabled(): Promise<boolean> {
   try {

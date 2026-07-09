@@ -103,7 +103,7 @@ export const SYSTEM_PROMPTS: readonly SystemPromptDef[] = [
   },
   {
     key: 'breakage.analyze',
-    label: "Breakage: What's Broken Analysis",
+    label: 'Predictive Analysis',
     description: 'Predicts broken areas, impacted tests, missing coverage, risk, and a regression suite from all inputs.',
     default: BREAKAGE_ANALYZE_SYSTEM,
   },

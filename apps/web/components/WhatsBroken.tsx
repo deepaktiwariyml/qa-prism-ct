@@ -64,13 +64,15 @@ export function WhatsBroken() {
   const [jiraSelected, setJiraSelected] = usePersistentState<Array<{ key: string; summary: string }>>('qa-prism:wb:jira', []);
   const [epicKey, setEpicKey] = usePersistentState('qa-prism:wb:epic', '');
   const [includeComments, setIncludeComments] = usePersistentState('qa-prism:wb:comments', false);
-  const [reqDocs, setReqDocs] = useState<ParsedDoc[]>([]);
-  const [tcDocs, setTcDocs] = useState<ParsedDoc[]>([]);
+  const [additionalContext, setAdditionalContext] = usePersistentState('qa-prism:wb:context', '');
+  // Persisted so inputs and the last result survive navigating away and back.
+  const [reqDocs, setReqDocs] = usePersistentState<ParsedDoc[]>('qa-prism:wb:reqDocs', []);
+  const [tcDocs, setTcDocs] = usePersistentState<ParsedDoc[]>('qa-prism:wb:tcDocs', []);
 
   const [busy, setBusy] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = usePersistentState<Result | null>('qa-prism:wb:result', null);
 
   // --- Jira typeahead (reuses the existing search endpoint) ---
   const [jiraQuery, setJiraQuery] = useState('');
@@ -133,7 +135,8 @@ export function WhatsBroken() {
     reqDocs.some((d) => d.text.trim()) ||
     tcDocs.some((d) => d.text.trim() || d.structured?.length) ||
     jiraSelected.length > 0 ||
-    epicKey.trim().length > 0;
+    epicKey.trim().length > 0 ||
+    additionalContext.trim().length > 0;
 
   async function analyze() {
     setBusy(true);
@@ -153,6 +156,7 @@ export function WhatsBroken() {
           jiraSelected.length || epicKey.trim()
             ? { keys: jiraSelected.map((j) => j.key), epicKey: epicKey.trim() || undefined, includeComments }
             : undefined,
+        additionalContext: additionalContext.trim() || undefined,
         requirementDocs: reqDocs
           .filter((d) => d.text.trim())
           .map((d, i) => ({ id: `REQ${i + 1}`, name: d.name, text: d.text })),
@@ -178,7 +182,7 @@ export function WhatsBroken() {
   return (
     <div>
       <p className="text-sm font-medium text-indigo-600">Pre-QA regression radar</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">What&apos;s Broken</h1>
+      <h1 className="mt-2 text-3xl font-semibold tracking-tight">Predictive Analysis</h1>
       <p className="mt-3 max-w-2xl text-slate-600">
         Point it at your PRs, requirement docs, test cases, and Jira. It predicts what may be broken,
         which tests to run, what coverage is missing, and how risky the change is — every prediction
@@ -200,6 +204,8 @@ export function WhatsBroken() {
           setEpicKey={setEpicKey}
           includeComments={includeComments}
           setIncludeComments={setIncludeComments}
+          extraContext={additionalContext}
+          setExtraContext={setAdditionalContext}
         />
 
         <UploadSection title="Test cases" hint="Excel, CSV, Word, PDF, Markdown, JSON, TestRail / Xray exports" docs={tcDocs} setDocs={setTcDocs} onFiles={onFiles} />
@@ -321,8 +327,10 @@ function JiraSection(props: {
   setEpicKey: (v: string) => void;
   includeComments: boolean;
   setIncludeComments: (v: boolean) => void;
+  extraContext: string;
+  setExtraContext: (v: string) => void;
 }) {
-  const { selected, remove, query, setQuery, results, searching, pick, epicKey, setEpicKey, includeComments, setIncludeComments } = props;
+  const { selected, remove, query, setQuery, results, searching, pick, epicKey, setEpicKey, includeComments, setIncludeComments, extraContext, setExtraContext } = props;
   return (
     <SectionCard>
       <Label>Jira</Label>
@@ -372,6 +380,16 @@ function JiraSection(props: {
           Include comments
         </label>
       </div>
+      <label className="mb-1.5 mt-4 block text-xs font-medium uppercase tracking-wide text-slate-500">
+        Additional context <span className="normal-case text-slate-400">— optional, free text</span>
+      </label>
+      <textarea
+        value={extraContext}
+        onChange={(e) => setExtraContext(e.target.value)}
+        rows={3}
+        placeholder="Anything else the analysis should know — non-obvious scope, environment, known risks, related work…"
+        className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+      />
     </SectionCard>
   );
 }
@@ -492,6 +510,30 @@ function ReportSection({ n, title, count, children }: { n: number; title: string
   );
 }
 
+function RecommendedCases({ cases, manifest }: { cases: Analysis['recommendedTestCases']; manifest: Manifest }) {
+  return (
+    <div className="space-y-3">
+      {cases.map((t, i) => (
+        <div key={i} className="rounded-lg border border-slate-100 p-3">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{t.type}</span>
+            <span className="font-medium text-slate-800">{t.title}</span>
+          </div>
+          {t.steps.length > 0 && (
+            <ol className="mt-1 list-decimal pl-5 text-sm text-slate-600">
+              {t.steps.map((s, j) => (
+                <li key={j}>{s}</li>
+              ))}
+            </ol>
+          )}
+          <p className="mt-1 text-sm text-slate-500">{t.rationale}</p>
+          <EvidenceChips evidence={t.evidence} manifest={manifest} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Report({ result }: { result: Result }) {
   const { analysis: a, manifest } = result;
   const verdictColor: Record<string, string> = {
@@ -499,6 +541,11 @@ function Report({ result }: { result: Result }) {
     'partially-impacted': 'bg-amber-100 text-amber-800',
     obsolete: 'bg-slate-200 text-slate-600',
   };
+  // Whether the user uploaded any test cases. When they did, the "Impacted Test
+  // Cases" section maps those; when they didn't, it surfaces the recommended
+  // (new) test cases instead — and we drop the separate recommended section to
+  // avoid showing the same list twice.
+  const hasUploadedTCs = (manifest.testCaseDocs ?? []).reduce((n, d) => n + d.count, 0) > 0;
 
   return (
     <div className="mt-8 space-y-4">
@@ -567,22 +614,35 @@ function Report({ result }: { result: Result }) {
         </ReportSection>
       </div>
 
-      <ReportSection n={5} title="Impacted Test Cases" count={a.impactedTestCases.length}>
-        <div className="space-y-2">
-          {a.impactedTestCases.map((t, i) => (
-            <div key={i} className="rounded-lg border border-slate-100 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded px-2 py-0.5 text-xs font-semibold ${verdictColor[t.verdict] ?? 'bg-slate-100'}`}>{t.verdict}</span>
-                <span className="font-mono text-xs text-slate-400">{t.tcId}</span>
-                <span className="font-medium text-slate-800">{t.title}</span>
-                <span className="text-xs text-slate-400">· {t.confidence}%</span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{t.reason}</p>
-              <EvidenceChips evidence={t.evidence} manifest={manifest} />
+      {hasUploadedTCs ? (
+        <ReportSection n={5} title="Impacted Test Cases" count={a.impactedTestCases.length}>
+          {a.impactedTestCases.length === 0 ? (
+            <p className="text-sm text-slate-500">None of the uploaded test cases appear impacted by these changes.</p>
+          ) : (
+            <div className="space-y-2">
+              {a.impactedTestCases.map((t, i) => (
+                <div key={i} className="rounded-lg border border-slate-100 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded px-2 py-0.5 text-xs font-semibold ${verdictColor[t.verdict] ?? 'bg-slate-100'}`}>{t.verdict}</span>
+                    <span className="font-mono text-xs text-slate-400">{t.tcId}</span>
+                    <span className="font-medium text-slate-800">{t.title}</span>
+                    <span className="text-xs text-slate-400">· {t.confidence}%</span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{t.reason}</p>
+                  <EvidenceChips evidence={t.evidence} manifest={manifest} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </ReportSection>
+          )}
+        </ReportSection>
+      ) : (
+        <ReportSection n={5} title="Test Cases to Run" count={a.recommendedTestCases.length}>
+          <p className="mb-3 text-sm text-slate-500">
+            No test cases were uploaded, so here are the tests to create and run for this change.
+          </p>
+          <RecommendedCases cases={a.recommendedTestCases} manifest={manifest} />
+        </ReportSection>
+      )}
 
       <ReportSection n={6} title="Missing Test Coverage" count={a.missingCoverage.length}>
         <ul className="space-y-2">
@@ -596,27 +656,11 @@ function Report({ result }: { result: Result }) {
         </ul>
       </ReportSection>
 
-      <ReportSection n={7} title="Recommended New Test Cases" count={a.recommendedTestCases.length}>
-        <div className="space-y-3">
-          {a.recommendedTestCases.map((t, i) => (
-            <div key={i} className="rounded-lg border border-slate-100 p-3">
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{t.type}</span>
-                <span className="font-medium text-slate-800">{t.title}</span>
-              </div>
-              {t.steps.length > 0 && (
-                <ol className="mt-1 list-decimal pl-5 text-sm text-slate-600">
-                  {t.steps.map((s, j) => (
-                    <li key={j}>{s}</li>
-                  ))}
-                </ol>
-              )}
-              <p className="mt-1 text-sm text-slate-500">{t.rationale}</p>
-              <EvidenceChips evidence={t.evidence} manifest={manifest} />
-            </div>
-          ))}
-        </div>
-      </ReportSection>
+      {hasUploadedTCs && (
+        <ReportSection n={7} title="Recommended New Test Cases" count={a.recommendedTestCases.length}>
+          <RecommendedCases cases={a.recommendedTestCases} manifest={manifest} />
+        </ReportSection>
+      )}
 
       <ReportSection n={8} title="Suggested Regression Suite">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -651,7 +695,7 @@ function toMarkdown(result: Result): string {
   const a = result.analysis;
   const ev = (e: Evidence[]) => (e?.length ? ` _(evidence: ${e.map((x) => `${x.kind}:${x.ref}`).join(', ')})_` : '');
   const lines: string[] = [];
-  lines.push(`# What's Broken — analysis\n`);
+  lines.push(`# Predictive Analysis\n`);
   lines.push(`**Risk: ${a.riskScore.level}** (confidence ${a.riskScore.confidence}%) — ${a.riskScore.rationale}\n`);
   lines.push(`## AI Summary\n\n${a.summary}\n`);
   lines.push(`## Predicted Broken Areas`);
@@ -683,7 +727,7 @@ function download(name: string, blob: Blob) {
 }
 
 function downloadMarkdown(result: Result) {
-  download('whats-broken.md', new Blob([toMarkdown(result)], { type: 'text/markdown' }));
+  download('predictive-analysis.md', new Blob([toMarkdown(result)], { type: 'text/markdown' }));
 }
 
 async function downloadPdf(result: Result) {
@@ -713,5 +757,5 @@ async function downloadPdf(result: Result) {
       else if (line.trim()) write(line);
       else y += 6;
     });
-  doc.save('whats-broken.pdf');
+  doc.save('predictive-analysis.pdf');
 }

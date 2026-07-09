@@ -40,6 +40,8 @@ export const BreakageInputSchema = z
     jira: JiraSelectionSchema.optional(),
     testCaseDocs: z.array(DocInputSchema).max(50).optional(),
     requirementDocs: z.array(DocInputSchema).max(50).optional(),
+    // Free-text extra context the user types in (not tied to any one input).
+    additionalContext: z.string().max(5_000).optional(),
   })
   .refine(
     (v) =>

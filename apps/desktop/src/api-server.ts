@@ -303,15 +303,18 @@ export function buildDesktopApi(usageFile: string): Server {
       return sendJson(res, 200, { prompt: resolveSystemPrompt('testcases.generate') });
     // Canonical system prompts for the read-only reference page (defaults only,
     // never the user's overrides).
-    if (route === 'GET /prompts')
+    if (route === 'GET /prompts') {
+      // Hide the Predictive Analysis prompts unless that feature is enabled.
+      const showBreakage = process.env.WHATS_BROKEN_ENABLED === '1';
       return sendJson(res, 200, {
-        prompts: SYSTEM_PROMPTS.map((p) => ({
+        prompts: SYSTEM_PROMPTS.filter((p) => showBreakage || !p.key.startsWith('breakage.')).map((p) => ({
           key: p.key,
           label: p.label,
           description: p.description,
           prompt: p.default,
         })),
       });
+    }
     if (route === 'GET /generator/cells') return sendJson(res, 200, (await loadRegistry()).cells);
     if (route === 'GET /usage') {
       const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 10, 1), 60);

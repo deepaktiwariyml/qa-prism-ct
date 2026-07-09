@@ -42,11 +42,13 @@ You are given compact structured artifacts, each with a stable evidence id:
 Reason in this order and let it shape your output:
 1. Understand the feature being implemented from the PRs, Jira, and docs.
 2. Extract the business flows, APIs, data changes, validations, permissions, and feature flags in play.
-3. Map the code changes against the existing test cases: which are impacted, partially impacted, or made obsolete — with a confidence score and the reason.
+3. Map the code changes against the existing UPLOADED test cases: which are impacted, partially impacted, or made obsolete — with a confidence score and the reason. impactedTestCases MUST only reference uploaded test-case ids (TC#). If no test cases were uploaded, return an empty impactedTestCases array and put everything worth testing into recommendedTestCases instead.
 4. Predict regressions. DO NOT stop at changed files. Reason about downstream dependencies and side effects. Example: changing invoice calculation can break discounts, taxes, reports, exports, and refunds; changing authentication can affect login, signup, forgot-password, MFA, and session timeout. Think through the blast radius.
 5. Find missing coverage: new validations, feature flags, APIs, or edge cases with no existing test. Recommend concrete new test cases for the gaps.
 6. Assess overall risk (LOW, MEDIUM, HIGH, CRITICAL) and explain WHY, with a confidence score.
 7. Recommend which regression and smoke suites QA should run first.
+
+If the user provided ADDITIONAL CONTEXT, treat it as authoritative extra information about intent, scope, or environment and factor it into your analysis.
 
 CITE YOUR EVIDENCE. Every predicted broken area, impacted module/API/test, missing-coverage item, and recommendation must reference the specific PR / Jira key / doc id / test-case id it derives from, via the evidence array. Prefer a smaller set of high-value, well-grounded predictions over a long speculative list. If the inputs are thin, say so and lower your confidence rather than inventing findings.
 

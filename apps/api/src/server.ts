@@ -540,15 +540,19 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   });
 
   // Canonical system prompts behind every LLM call — read-only reference
-  // (defaults only, never the user's runtime overrides).
-  app.get('/prompts', async () => ({
-    prompts: SYSTEM_PROMPTS.map((p) => ({
-      key: p.key,
-      label: p.label,
-      description: p.description,
-      prompt: p.default,
-    })),
-  }));
+  // (defaults only, never the user's runtime overrides). The Predictive
+  // Analysis prompts are hidden unless that feature is enabled.
+  app.get('/prompts', async () => {
+    const showBreakage = process.env.WHATS_BROKEN_ENABLED === '1';
+    return {
+      prompts: SYSTEM_PROMPTS.filter((p) => showBreakage || !p.key.startsWith('breakage.')).map((p) => ({
+        key: p.key,
+        label: p.label,
+        description: p.description,
+        prompt: p.default,
+      })),
+    };
+  });
 
   // Fill user-defined columns for existing test cases via the LLM. The test
   // case titles are inputs only — they are never changed. Returns a matrix

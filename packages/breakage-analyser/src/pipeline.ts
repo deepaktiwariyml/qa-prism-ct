@@ -229,8 +229,12 @@ function buildSynthesisPrompt(ctx: {
   jira: Awaited<ReturnType<typeof resolveJira>>['items'];
   requirements: RequirementDocFacts[];
   testCases: NormalizedCase[];
+  additionalContext?: string;
 }): string {
   const lines: string[] = [];
+
+  const extra = ctx.additionalContext?.trim();
+  if (extra) lines.push(`# ADDITIONAL CONTEXT (provided by the user)\n${extra}\n`);
 
   lines.push('# PULL REQUESTS');
   if (!ctx.changes.length) lines.push('(none)');
@@ -340,6 +344,7 @@ export async function analyzeBreakage(rawInput: BreakageInput, deps: AnalyzeDeps
     jira: jira.items,
     requirements,
     testCases,
+    additionalContext: input.additionalContext,
   });
 
   usage.setModel(process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6');
