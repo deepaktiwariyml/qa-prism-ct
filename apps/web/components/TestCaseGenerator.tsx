@@ -62,6 +62,19 @@ export function TestCaseGenerator() {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = usePersistentState<Row[]>('qa-prism:tc:rows', []);
   const [columns, setColumns] = usePersistentState<Column[]>('qa-prism:tc:columns', []);
+  // Extra column names the user defined in Settings; merged into the "Add
+  // column" menu after the standard presets.
+  const [customColumns, setCustomColumns] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/testcases/custom-columns', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => alive && Array.isArray(d?.columns) && setCustomColumns(d.columns))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [openMenu, setOpenMenu] = useState<'xlsx' | 'pdf' | null>(null);
   const downloadsRef = useRef<HTMLDivElement>(null);
@@ -832,6 +845,33 @@ export function TestCaseGenerator() {
                       </label>
                     );
                   })}
+                  {customColumns.filter((n) => !PRESET_COLUMNS.includes(n as (typeof PRESET_COLUMNS)[number])).length >
+                    0 && (
+                    <>
+                      <div className="mt-1 border-t border-slate-100 px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                        Your columns
+                      </div>
+                      {customColumns
+                        .filter((n) => !PRESET_COLUMNS.includes(n as (typeof PRESET_COLUMNS)[number]))
+                        .map((name) => {
+                          const checked = columns.some((c) => c.name === name);
+                          return (
+                            <label
+                              key={name}
+                              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleColumn(name)}
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                              />
+                              {name}
+                            </label>
+                          );
+                        })}
+                    </>
+                  )}
                 </div>
               )}
             </div>

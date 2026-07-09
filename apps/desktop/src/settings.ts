@@ -21,6 +21,9 @@ export interface Settings {
   systemPrompts: Record<string, string>;
   // Feature flag: gate the (experimental) "What's Broken" feature. Off by default.
   whatsBrokenEnabled: boolean;
+  // Extra test-case column names the user added; appear in the generator's
+  // "Add column" menu. Not secret — stored in the clear.
+  customTestcaseColumns: string[];
 }
 
 const DEFAULTS: Settings = {
@@ -33,6 +36,7 @@ const DEFAULTS: Settings = {
   jiraApiToken: '',
   systemPrompts: {},
   whatsBrokenEnabled: false,
+  customTestcaseColumns: [],
 };
 
 interface StoredShape {
@@ -42,6 +46,7 @@ interface StoredShape {
   jiraEmail?: string;
   systemPrompts?: Record<string, string>;
   whatsBrokenEnabled?: boolean;
+  customTestcaseColumns?: string[];
   // secrets stored as base64 ciphertext (safeStorage) or '' when unset
   anthropicApiKeyEnc?: string;
   githubTokenEnc?: string;
@@ -91,10 +96,29 @@ export function loadSettings(): Settings {
       systemPrompts:
         raw.systemPrompts && typeof raw.systemPrompts === 'object' ? { ...raw.systemPrompts } : {},
       whatsBrokenEnabled: raw.whatsBrokenEnabled === true,
+      customTestcaseColumns: Array.isArray(raw.customTestcaseColumns)
+        ? raw.customTestcaseColumns.filter((c): c is string => typeof c === 'string')
+        : [],
     };
   } catch {
     return { ...DEFAULTS };
   }
+}
+
+/** Trim, drop blanks, de-dupe (case-insensitive), and cap custom columns. */
+function cleanColumns(cols: string[] | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of cols ?? []) {
+    const name = String(raw).trim().slice(0, 60);
+    const key = name.toLowerCase();
+    if (name && !seen.has(key)) {
+      seen.add(key);
+      out.push(name);
+    }
+    if (out.length >= 30) break;
+  }
+  return out;
 }
 
 export function saveSettings(next: Settings): void {
@@ -110,6 +134,7 @@ export function saveSettings(next: Settings): void {
     jiraEmail: next.jiraEmail || '',
     systemPrompts: prompts,
     whatsBrokenEnabled: Boolean(next.whatsBrokenEnabled),
+    customTestcaseColumns: cleanColumns(next.customTestcaseColumns),
     anthropicApiKeyEnc: encrypt(next.anthropicApiKey),
     githubTokenEnc: encrypt(next.githubToken),
     jiraApiTokenEnc: encrypt(next.jiraApiToken),
@@ -132,6 +157,8 @@ export function settingsToEnv(s: Settings): Record<string, string> {
   if (s.jiraApiToken) env.JIRA_API_TOKEN = s.jiraApiToken;
   // Always set explicitly ('1'/'0') so toggling off overwrites a prior '1'.
   env.WHATS_BROKEN_ENABLED = s.whatsBrokenEnabled ? '1' : '0';
+  // Always set (JSON, possibly '[]') so clearing overwrites a prior value.
+  env.QA_CUSTOM_TESTCASE_COLUMNS = JSON.stringify(cleanColumns(s.customTestcaseColumns));
   return env;
 }
 

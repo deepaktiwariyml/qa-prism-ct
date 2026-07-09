@@ -314,6 +314,17 @@ export function buildServer(queue: Queue<ScanJobData>): FastifyInstance {
   // Runtime feature flags for the web app.
   app.get('/flags', async () => ({ whatsBroken: process.env.WHATS_BROKEN_ENABLED === '1' }));
 
+  // User-defined extra test-case columns (JSON string[] in env; [] if unset).
+  app.get('/testcases/custom-columns', async () => {
+    const raw = process.env.QA_CUSTOM_TESTCASE_COLUMNS;
+    try {
+      const v = raw ? JSON.parse(raw) : [];
+      return { columns: Array.isArray(v) ? v.filter((x: unknown): x is string => typeof x === 'string') : [] };
+    } catch {
+      return { columns: [] };
+    }
+  });
+
   // "What's Broken": predict regressions/impacted tests from PRs + docs +
   // test cases + Jira. Stateless (ephemeral) — no persistence. Gated by flag.
   app.post('/breakage/analyze', async (req, reply) => {
