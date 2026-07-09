@@ -46,7 +46,7 @@ interface Result {
 }
 
 interface PrRow {
-  provider: 'github' | 'paste';
+  provider: 'github' | 'compare' | 'paste';
   url: string;
   rawDiff: string;
   repoContext: string;
@@ -57,6 +57,119 @@ function riskBadge(level: RiskLevel): string {
   return SEVERITY_BADGE[level.toLowerCase() as keyof typeof SEVERITY_BADGE] ?? SEVERITY_BADGE.info;
 }
 
+// Plain-language help, accurate to how the feature actually works.
+const HOW_STEPS: Array<{ title: string; body: string }> = [
+  {
+    title: 'Add your inputs',
+    body: 'Add one or more pull requests (a GitHub link, a whole release via a Compare link, or a pasted diff for Bitbucket / GitLab / Azure), pick Jira tickets or an epic, and upload your test cases and requirement/design docs. Anything else worth knowing goes in the “Additional context” box. Use whatever mix you have — nothing is required.',
+  },
+  {
+    title: 'Your files are read in your browser',
+    body: 'Excel, CSV, Word, PDF, Markdown, and JSON are read right here on your machine. Only the extracted text is sent for analysis — the original files never leave your computer.',
+  },
+  {
+    title: 'It studies each input on its own',
+    body: 'First it summarizes what each PR actually changes, pulls the requirements and acceptance criteria out of your documents, and tidies your uploaded test cases into a clean list.',
+  },
+  {
+    title: 'It pulls in your Jira',
+    body: 'If you selected tickets, it fetches their summary, description, acceptance criteria, labels, and linked issues. Choose an epic and it pulls in that epic’s child tickets too.',
+  },
+  {
+    title: 'It connects the dots',
+    body: 'Then it does one focused pass that links the code changes to your tests, requirements, and tickets — thinking about knock-on effects, not just the files that changed. For example, a change to invoice totals can ripple into discounts, taxes, and refunds.',
+  },
+  {
+    title: 'You get an actionable report',
+    body: 'An overall risk level, the areas most likely to break, impacted modules and APIs, which of your test cases to run (or new ones to add if you uploaded none), gaps with no coverage, and a suggested set of smoke and regression suites to run first.',
+  },
+  {
+    title: 'Every point is traceable',
+    body: 'Each finding links back to the exact PR, ticket, document, or test case it came from, so you can check the reasoning. Export the whole report to Markdown or PDF.',
+  },
+];
+
+const TIPS: string[] = [
+  'More inputs, sharper results. A PR on its own works, but adding requirements and your existing test cases makes the predictions far more grounded.',
+  'Upload your existing test cases so it can point to the exact ones to re-run. With none uploaded, it suggests brand-new tests to write instead.',
+  'Private GitHub repo? Add a GitHub token. On Bitbucket, GitLab, or Azure DevOps, paste the raw diff instead of a link.',
+  'Use “Additional context” for things the code and docs don’t say — like “this only affects mobile” or “the payments flow is in scope”.',
+  'Pick a Jira epic to pull in all its child tickets at once, instead of adding them one by one.',
+  'Larger inputs cost a little more and take a bit longer. Trim to what’s relevant for a faster, cheaper run.',
+  'Treat it as a smart head-start, not a guarantee. Start by verifying the highest-risk items it flags.',
+];
+
+const COMPARE_STEPS: Array<{ title: string; body: string }> = [
+  { title: 'Open your repository on GitHub', body: 'Go to the repo you want to analyze.' },
+  {
+    title: 'Open the Compare page',
+    body: 'Click the branch dropdown and choose “Compare”, or just add /compare to the repo’s URL in the address bar.',
+  },
+  {
+    title: 'Pick the “base” — where to compare from',
+    body: 'Usually your last release: a tag like v1.2.0 or a release branch. This is the starting point.',
+  },
+  {
+    title: 'Pick the “head” — where to compare to',
+    body: 'Usually main (or the new release branch). GitHub now shows every change between the two points.',
+  },
+  {
+    title: 'Copy the URL and paste it here',
+    body: 'Copy it straight from your browser’s address bar. It looks like: https://github.com/org/repo/compare/v1.2.0...main',
+  },
+];
+
+const HELP_TITLES: Record<'how' | 'tips' | 'compare', string> = {
+  how: 'How it works',
+  tips: 'Tips for better results',
+  compare: 'How to get a compare URL',
+};
+
+function HelpModal({ which, onClose }: { which: 'how' | 'tips' | 'compare'; onClose: () => void }) {
+  const steps = which === 'how' ? HOW_STEPS : which === 'compare' ? COMPARE_STEPS : null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h2 className="text-lg font-semibold text-slate-900">{HELP_TITLES[which]}</h2>
+          <button onClick={onClose} aria-label="Close" className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+        <div className="overflow-auto px-5 py-4">
+          {steps ? (
+            <ol className="space-y-4">
+              {steps.map((s, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-xs font-semibold text-white">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <p className="font-medium text-slate-800">{s.title}</p>
+                    <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{s.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <ul className="space-y-3">
+              {TIPS.map((t, i) => (
+                <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-700">
+                  <span className="mt-0.5 shrink-0 text-indigo-500">•</span>
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function WhatsBroken() {
   // Inputs (small, persisted). Tokens and parsed docs are not persisted.
   const [prs, setPrs] = usePersistentState<PrRow[]>('qa-prism:wb:prs', [{ ...EMPTY_PR }]);
@@ -64,13 +177,16 @@ export function WhatsBroken() {
   const [jiraSelected, setJiraSelected] = usePersistentState<Array<{ key: string; summary: string }>>('qa-prism:wb:jira', []);
   const [epicKey, setEpicKey] = usePersistentState('qa-prism:wb:epic', '');
   const [includeComments, setIncludeComments] = usePersistentState('qa-prism:wb:comments', false);
-  const [reqDocs, setReqDocs] = useState<ParsedDoc[]>([]);
-  const [tcDocs, setTcDocs] = useState<ParsedDoc[]>([]);
+  const [additionalContext, setAdditionalContext] = usePersistentState('qa-prism:wb:context', '');
+  // Persisted so inputs and the last result survive navigating away and back.
+  const [reqDocs, setReqDocs] = usePersistentState<ParsedDoc[]>('qa-prism:wb:reqDocs', []);
+  const [tcDocs, setTcDocs] = usePersistentState<ParsedDoc[]>('qa-prism:wb:tcDocs', []);
 
   const [busy, setBusy] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = usePersistentState<Result | null>('qa-prism:wb:result', null);
+  const [help, setHelp] = useState<'how' | 'tips' | 'compare' | null>(null);
 
   // --- Jira typeahead (reuses the existing search endpoint) ---
   const [jiraQuery, setJiraQuery] = useState('');
@@ -129,11 +245,12 @@ export function WhatsBroken() {
   }
 
   const hasInput =
-    prs.some((p) => (p.provider === 'github' ? p.url.trim() : p.rawDiff.trim())) ||
+    prs.some((p) => (p.provider === 'paste' ? p.rawDiff.trim() : p.url.trim())) ||
     reqDocs.some((d) => d.text.trim()) ||
     tcDocs.some((d) => d.text.trim() || d.structured?.length) ||
     jiraSelected.length > 0 ||
-    epicKey.trim().length > 0;
+    epicKey.trim().length > 0 ||
+    additionalContext.trim().length > 0;
 
   async function analyze() {
     setBusy(true);
@@ -142,17 +259,18 @@ export function WhatsBroken() {
     try {
       const payload = {
         prs: prs
-          .filter((p) => (p.provider === 'github' ? p.url.trim() : p.rawDiff.trim()))
+          .filter((p) => (p.provider === 'paste' ? p.rawDiff.trim() : p.url.trim()))
           .map((p) =>
-            p.provider === 'github'
-              ? { provider: 'github', url: p.url.trim() }
-              : { provider: 'paste', rawDiff: p.rawDiff, repoContext: p.repoContext.trim() || undefined },
+            p.provider === 'paste'
+              ? { provider: 'paste', rawDiff: p.rawDiff, repoContext: p.repoContext.trim() || undefined }
+              : { provider: p.provider, url: p.url.trim() },
           ),
         githubToken: githubToken.trim() || undefined,
         jira:
           jiraSelected.length || epicKey.trim()
             ? { keys: jiraSelected.map((j) => j.key), epicKey: epicKey.trim() || undefined, includeComments }
             : undefined,
+        additionalContext: additionalContext.trim() || undefined,
         requirementDocs: reqDocs
           .filter((d) => d.text.trim())
           .map((d, i) => ({ id: `REQ${i + 1}`, name: d.name, text: d.text })),
@@ -177,16 +295,36 @@ export function WhatsBroken() {
 
   return (
     <div>
-      <p className="text-sm font-medium text-indigo-600">Pre-QA regression radar</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">What&apos;s Broken</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-indigo-600">Pre-QA regression radar</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Predictive Analysis</h1>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => setHelp('how')}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            How it works
+          </button>
+          <button
+            onClick={() => setHelp('tips')}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            💡 Tips
+          </button>
+        </div>
+      </div>
       <p className="mt-3 max-w-2xl text-slate-600">
         Point it at your PRs, requirement docs, test cases, and Jira. It predicts what may be broken,
         which tests to run, what coverage is missing, and how risky the change is — every prediction
         citing its source.
       </p>
 
+      {help && <HelpModal which={help} onClose={() => setHelp(null)} />}
+
       <div className="mt-8 space-y-6">
-        <PrSection prs={prs} setPr={setPr} addPr={addPr} removePr={removePr} githubToken={githubToken} setGithubToken={setGithubToken} />
+        <PrSection prs={prs} setPr={setPr} addPr={addPr} removePr={removePr} githubToken={githubToken} setGithubToken={setGithubToken} onCompareHelp={() => setHelp('compare')} />
 
         <JiraSection
           selected={jiraSelected}
@@ -200,6 +338,8 @@ export function WhatsBroken() {
           setEpicKey={setEpicKey}
           includeComments={includeComments}
           setIncludeComments={setIncludeComments}
+          extraContext={additionalContext}
+          setExtraContext={setAdditionalContext}
         />
 
         <UploadSection title="Test cases" hint="Excel, CSV, Word, PDF, Markdown, JSON, TestRail / Xray exports" docs={tcDocs} setDocs={setTcDocs} onFiles={onFiles} />
@@ -240,8 +380,9 @@ function PrSection(props: {
   removePr: (i: number) => void;
   githubToken: string;
   setGithubToken: (v: string) => void;
+  onCompareHelp: () => void;
 }) {
-  const { prs, setPr, addPr, removePr, githubToken, setGithubToken } = props;
+  const { prs, setPr, addPr, removePr, githubToken, setGithubToken, onCompareHelp } = props;
   return (
     <SectionCard>
       <div className="flex items-center justify-between">
@@ -259,23 +400,28 @@ function PrSection(props: {
                 onChange={(e) => setPr(i, { provider: e.target.value as PrRow['provider'] })}
                 className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
               >
-                <option value="github">GitHub</option>
+                <option value="github">GitHub PR</option>
+                <option value="compare">Compare / Release</option>
                 <option value="paste">Paste diff</option>
               </select>
-              {pr.provider === 'github' ? (
-                <input
-                  type="text"
-                  value={pr.url}
-                  onChange={(e) => setPr(i, { url: e.target.value })}
-                  placeholder="https://github.com/org/repo/pull/123"
-                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
-                />
-              ) : (
+              {pr.provider === 'paste' ? (
                 <input
                   type="text"
                   value={pr.repoContext}
                   onChange={(e) => setPr(i, { repoContext: e.target.value })}
                   placeholder="Optional: what/where this diff is (e.g. Bitbucket · payments-service)"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={pr.url}
+                  onChange={(e) => setPr(i, { url: e.target.value })}
+                  placeholder={
+                    pr.provider === 'compare'
+                      ? 'https://github.com/org/repo/compare/v1.2.0...main'
+                      : 'https://github.com/org/repo/pull/123'
+                  }
                   className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
                 />
               )}
@@ -285,6 +431,14 @@ function PrSection(props: {
                 </button>
               )}
             </div>
+            {pr.provider === 'compare' && (
+              <p className="mt-1.5 text-xs text-slate-400">
+                Analyzes everything that changed between two points (e.g. your last release → main).{' '}
+                <button onClick={onCompareHelp} className="font-medium text-indigo-600 hover:underline">
+                  How to get this?
+                </button>
+              </p>
+            )}
             {pr.provider === 'paste' && (
               <textarea
                 value={pr.rawDiff}
@@ -321,8 +475,10 @@ function JiraSection(props: {
   setEpicKey: (v: string) => void;
   includeComments: boolean;
   setIncludeComments: (v: boolean) => void;
+  extraContext: string;
+  setExtraContext: (v: string) => void;
 }) {
-  const { selected, remove, query, setQuery, results, searching, pick, epicKey, setEpicKey, includeComments, setIncludeComments } = props;
+  const { selected, remove, query, setQuery, results, searching, pick, epicKey, setEpicKey, includeComments, setIncludeComments, extraContext, setExtraContext } = props;
   return (
     <SectionCard>
       <Label>Jira</Label>
@@ -372,6 +528,16 @@ function JiraSection(props: {
           Include comments
         </label>
       </div>
+      <label className="mb-1.5 mt-4 block text-xs font-medium uppercase tracking-wide text-slate-500">
+        Additional context <span className="normal-case text-slate-400">— optional, free text</span>
+      </label>
+      <textarea
+        value={extraContext}
+        onChange={(e) => setExtraContext(e.target.value)}
+        rows={3}
+        placeholder="Anything else the analysis should know — non-obvious scope, environment, known risks, related work…"
+        className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+      />
     </SectionCard>
   );
 }
@@ -492,6 +658,30 @@ function ReportSection({ n, title, count, children }: { n: number; title: string
   );
 }
 
+function RecommendedCases({ cases, manifest }: { cases: Analysis['recommendedTestCases']; manifest: Manifest }) {
+  return (
+    <div className="space-y-3">
+      {cases.map((t, i) => (
+        <div key={i} className="rounded-lg border border-slate-100 p-3">
+          <div className="flex items-center gap-2">
+            <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{t.type}</span>
+            <span className="font-medium text-slate-800">{t.title}</span>
+          </div>
+          {t.steps.length > 0 && (
+            <ol className="mt-1 list-decimal pl-5 text-sm text-slate-600">
+              {t.steps.map((s, j) => (
+                <li key={j}>{s}</li>
+              ))}
+            </ol>
+          )}
+          <p className="mt-1 text-sm text-slate-500">{t.rationale}</p>
+          <EvidenceChips evidence={t.evidence} manifest={manifest} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Report({ result }: { result: Result }) {
   const { analysis: a, manifest } = result;
   const verdictColor: Record<string, string> = {
@@ -499,6 +689,11 @@ function Report({ result }: { result: Result }) {
     'partially-impacted': 'bg-amber-100 text-amber-800',
     obsolete: 'bg-slate-200 text-slate-600',
   };
+  // Whether the user uploaded any test cases. When they did, the "Impacted Test
+  // Cases" section maps those; when they didn't, it surfaces the recommended
+  // (new) test cases instead — and we drop the separate recommended section to
+  // avoid showing the same list twice.
+  const hasUploadedTCs = (manifest.testCaseDocs ?? []).reduce((n, d) => n + d.count, 0) > 0;
 
   return (
     <div className="mt-8 space-y-4">
@@ -567,22 +762,35 @@ function Report({ result }: { result: Result }) {
         </ReportSection>
       </div>
 
-      <ReportSection n={5} title="Impacted Test Cases" count={a.impactedTestCases.length}>
-        <div className="space-y-2">
-          {a.impactedTestCases.map((t, i) => (
-            <div key={i} className="rounded-lg border border-slate-100 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded px-2 py-0.5 text-xs font-semibold ${verdictColor[t.verdict] ?? 'bg-slate-100'}`}>{t.verdict}</span>
-                <span className="font-mono text-xs text-slate-400">{t.tcId}</span>
-                <span className="font-medium text-slate-800">{t.title}</span>
-                <span className="text-xs text-slate-400">· {t.confidence}%</span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{t.reason}</p>
-              <EvidenceChips evidence={t.evidence} manifest={manifest} />
+      {hasUploadedTCs ? (
+        <ReportSection n={5} title="Impacted Test Cases" count={a.impactedTestCases.length}>
+          {a.impactedTestCases.length === 0 ? (
+            <p className="text-sm text-slate-500">None of the uploaded test cases appear impacted by these changes.</p>
+          ) : (
+            <div className="space-y-2">
+              {a.impactedTestCases.map((t, i) => (
+                <div key={i} className="rounded-lg border border-slate-100 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded px-2 py-0.5 text-xs font-semibold ${verdictColor[t.verdict] ?? 'bg-slate-100'}`}>{t.verdict}</span>
+                    <span className="font-mono text-xs text-slate-400">{t.tcId}</span>
+                    <span className="font-medium text-slate-800">{t.title}</span>
+                    <span className="text-xs text-slate-400">· {t.confidence}%</span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{t.reason}</p>
+                  <EvidenceChips evidence={t.evidence} manifest={manifest} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </ReportSection>
+          )}
+        </ReportSection>
+      ) : (
+        <ReportSection n={5} title="Test Cases to Run" count={a.recommendedTestCases.length}>
+          <p className="mb-3 text-sm text-slate-500">
+            No test cases were uploaded, so here are the tests to create and run for this change.
+          </p>
+          <RecommendedCases cases={a.recommendedTestCases} manifest={manifest} />
+        </ReportSection>
+      )}
 
       <ReportSection n={6} title="Missing Test Coverage" count={a.missingCoverage.length}>
         <ul className="space-y-2">
@@ -596,27 +804,11 @@ function Report({ result }: { result: Result }) {
         </ul>
       </ReportSection>
 
-      <ReportSection n={7} title="Recommended New Test Cases" count={a.recommendedTestCases.length}>
-        <div className="space-y-3">
-          {a.recommendedTestCases.map((t, i) => (
-            <div key={i} className="rounded-lg border border-slate-100 p-3">
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{t.type}</span>
-                <span className="font-medium text-slate-800">{t.title}</span>
-              </div>
-              {t.steps.length > 0 && (
-                <ol className="mt-1 list-decimal pl-5 text-sm text-slate-600">
-                  {t.steps.map((s, j) => (
-                    <li key={j}>{s}</li>
-                  ))}
-                </ol>
-              )}
-              <p className="mt-1 text-sm text-slate-500">{t.rationale}</p>
-              <EvidenceChips evidence={t.evidence} manifest={manifest} />
-            </div>
-          ))}
-        </div>
-      </ReportSection>
+      {hasUploadedTCs && (
+        <ReportSection n={7} title="Recommended New Test Cases" count={a.recommendedTestCases.length}>
+          <RecommendedCases cases={a.recommendedTestCases} manifest={manifest} />
+        </ReportSection>
+      )}
 
       <ReportSection n={8} title="Suggested Regression Suite">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -651,7 +843,7 @@ function toMarkdown(result: Result): string {
   const a = result.analysis;
   const ev = (e: Evidence[]) => (e?.length ? ` _(evidence: ${e.map((x) => `${x.kind}:${x.ref}`).join(', ')})_` : '');
   const lines: string[] = [];
-  lines.push(`# What's Broken — analysis\n`);
+  lines.push(`# Predictive Analysis\n`);
   lines.push(`**Risk: ${a.riskScore.level}** (confidence ${a.riskScore.confidence}%) — ${a.riskScore.rationale}\n`);
   lines.push(`## AI Summary\n\n${a.summary}\n`);
   lines.push(`## Predicted Broken Areas`);
@@ -683,7 +875,7 @@ function download(name: string, blob: Blob) {
 }
 
 function downloadMarkdown(result: Result) {
-  download('whats-broken.md', new Blob([toMarkdown(result)], { type: 'text/markdown' }));
+  download('predictive-analysis.md', new Blob([toMarkdown(result)], { type: 'text/markdown' }));
 }
 
 async function downloadPdf(result: Result) {
@@ -713,5 +905,5 @@ async function downloadPdf(result: Result) {
       else if (line.trim()) write(line);
       else y += 6;
     });
-  doc.save('whats-broken.pdf');
+  doc.save('predictive-analysis.pdf');
 }

@@ -15,6 +15,17 @@ import { UsageStore } from './usage-store.js';
 
 const FAST_MODEL = () => process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
 
+/** Parse the QA_CUSTOM_TESTCASE_COLUMNS env (a JSON string[]) safely. */
+function parseCustomColumns(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Strip a wrapping ```lang … ``` code fence if the model added one. */
 function stripCodeFence(s: string): string {
   const t = s.trim();
@@ -301,17 +312,23 @@ export function buildDesktopApi(usageFile: string): Server {
     if (route === 'GET /flags') return sendJson(res, 200, { whatsBroken: process.env.WHATS_BROKEN_ENABLED === '1' });
     if (route === 'GET /testcases/system-prompt')
       return sendJson(res, 200, { prompt: resolveSystemPrompt('testcases.generate') });
+    // User-defined extra columns for the test-case generator (from Settings).
+    if (route === 'GET /testcases/custom-columns')
+      return sendJson(res, 200, { columns: parseCustomColumns(process.env.QA_CUSTOM_TESTCASE_COLUMNS) });
     // Canonical system prompts for the read-only reference page (defaults only,
     // never the user's overrides).
-    if (route === 'GET /prompts')
+    if (route === 'GET /prompts') {
+      // Hide the Predictive Analysis prompts unless that feature is enabled.
+      const showBreakage = process.env.WHATS_BROKEN_ENABLED === '1';
       return sendJson(res, 200, {
-        prompts: SYSTEM_PROMPTS.map((p) => ({
+        prompts: SYSTEM_PROMPTS.filter((p) => showBreakage || !p.key.startsWith('breakage.')).map((p) => ({
           key: p.key,
           label: p.label,
           description: p.description,
           prompt: p.default,
         })),
       });
+    }
     if (route === 'GET /generator/cells') return sendJson(res, 200, (await loadRegistry()).cells);
     if (route === 'GET /usage') {
       const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 10, 1), 60);

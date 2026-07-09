@@ -205,10 +205,17 @@ function buildMenu(): void {
 ipcMain.on('settings:open', () => openSettingsWindow());
 ipcMain.handle('settings:get', () => loadSettings());
 // Registry of canonical prompts (key/label/description/default) so the
-// Settings window can show each one with its default for editing.
-ipcMain.handle('prompts:registry', () =>
-  SYSTEM_PROMPTS.map((p) => ({ key: p.key, label: p.label, description: p.description, default: p.default })),
-);
+// Settings window can show each one with its default for editing. The
+// Predictive Analysis prompts are hidden unless that feature is enabled.
+ipcMain.handle('prompts:registry', () => {
+  const showBreakage = loadSettings().whatsBrokenEnabled;
+  return SYSTEM_PROMPTS.filter((p) => showBreakage || !p.key.startsWith('breakage.')).map((p) => ({
+    key: p.key,
+    label: p.label,
+    description: p.description,
+    default: p.default,
+  }));
+});
 ipcMain.handle('settings:save', async (_e, next: Settings) => {
   try {
     saveSettings(next);

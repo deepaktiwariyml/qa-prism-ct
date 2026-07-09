@@ -53,6 +53,17 @@
         font-size: 13px; color: #0f172a; font-weight: 400; cursor: pointer;
       }
       .switch-row input { width: 16px; height: 16px; margin: 1px 0 0; flex: none; accent-color: #4f46e5; }
+      .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .tag {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #eef2ff; color: #4338ca; border-radius: 999px;
+        padding: 3px 10px; font-size: 12px; font-weight: 600;
+      }
+      .tag button {
+        border: 0; background: none; color: #818cf8; cursor: pointer;
+        padding: 0; width: auto; font-size: 13px; line-height: 1;
+      }
+      .tag button:hover { color: #4338ca; }
       details.prompt {
         border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; margin-top: 10px;
       }
@@ -127,9 +138,18 @@
     <h2>Experimental</h2>
     <label class="switch-row">
       <input id="whatsBrokenEnabled" type="checkbox" />
-      <span>I want to test <strong>What&apos;s Broken</strong>
+      <span>I want to test <strong>Predictive Analysis</strong>
         <span class="hint">— shows the feature in the navigation. Off by default.</span></span>
     </label>
+
+    <hr />
+    <h2>Test-case columns</h2>
+    <p class="note">
+      Add your own column names for the Test Cases generator’s “Add column” menu. Type a name and
+      press Enter (or Tab). They’re saved and appear alongside the standard columns.
+    </p>
+    <input id="customColumnInput" type="text" placeholder="e.g. Test Environment — then press Enter" spellcheck="false" />
+    <div id="customColumns" class="tags"></div>
 
     <hr />
     <h2>System prompts</h2>
@@ -227,10 +247,50 @@
         return out;
       }
 
+      // --- Custom test-case columns (badge input) ---
+      let customCols = [];
+      function renderCols() {
+        const root = $('customColumns');
+        root.textContent = '';
+        customCols.forEach((name, idx) => {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          const label = document.createElement('span');
+          label.textContent = name;
+          tag.appendChild(label);
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.textContent = '✕';
+          x.setAttribute('aria-label', 'Remove ' + name);
+          x.addEventListener('click', () => {
+            customCols.splice(idx, 1);
+            renderCols();
+          });
+          tag.appendChild(x);
+          root.appendChild(tag);
+        });
+      }
+      function addCol(raw) {
+        const name = String(raw).trim().slice(0, 60);
+        if (!name || customCols.length >= 30) return;
+        if (customCols.some((c) => c.toLowerCase() === name.toLowerCase())) return;
+        customCols.push(name);
+        renderCols();
+      }
+      $('customColumnInput').addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === 'Tab') && e.target.value.trim()) {
+          e.preventDefault();
+          addCol(e.target.value);
+          e.target.value = '';
+        }
+      });
+
       async function load() {
         const s = await window.qaprism.getSettings();
         for (const f of fields) $(f).value = s[f] ?? '';
         $('whatsBrokenEnabled').checked = s.whatsBrokenEnabled === true;
+        customCols = Array.isArray(s.customTestcaseColumns) ? [...s.customTestcaseColumns] : [];
+        renderCols();
         try {
           const registry = await window.qaprism.getPromptRegistry();
           renderPrompts(registry || [], s.systemPrompts || {});
@@ -243,6 +303,10 @@
         for (const f of fields) settings[f] = $(f).value.trim();
         settings.systemPrompts = collectPrompts();
         settings.whatsBrokenEnabled = $('whatsBrokenEnabled').checked;
+        // Include a name typed but not yet committed with Enter/Tab.
+        if ($('customColumnInput').value.trim()) addCol($('customColumnInput').value);
+        $('customColumnInput').value = '';
+        settings.customTestcaseColumns = customCols;
         if (!settings.anthropicApiKey) {
           $('status').textContent = 'An Anthropic API key is required.';
           $('status').style.color = '#dc2626';
