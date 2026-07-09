@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, ipcMain, shell, dialog } from 'electron';
 import { createServer } from 'node:net';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -16,10 +16,9 @@ app.setName(APP_NAME);
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
-let webProc: ChildProcess | null = null;
+let webServer: HttpServer | null = null;
 let apiPort = 0;
 let webPort = 0;
-let quitting = false;
 
 /** Ask the OS for a free localhost port. */
 function freePort(): Promise<number> {
@@ -60,59 +59,51 @@ function generatorRoot(): string {
     : join(__dirname, '..', '..', '..', 'packages', 'generator');
 }
 
-/** Locate the Next CLI + app dir we run `next start` against. Packaged: the
- *  symlink-free `pnpm deploy` tree under resources/web. Dev: the workspace app. */
-function resolveWeb(): { entry: string; cwd: string } {
-  if (app.isPackaged) {
-    const webRoot = join(process.resourcesPath, 'web');
-    return { entry: join(webRoot, 'node_modules', 'next', 'dist', 'bin', 'next'), cwd: webRoot };
-  }
-  const webDir = join(__dirname, '..', '..', 'web');
-  return { entry: require.resolve('next/dist/bin/next', { paths: [webDir] }), cwd: webDir };
+/** The Next app directory. Packaged: the symlink-free `pnpm deploy` tree under
+ *  resources/web. Dev: the workspace app. */
+function webRoot(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'web') : join(__dirname, '..', '..', 'web');
 }
 
+/**
+ * Start Next's production server IN-PROCESS (no child process). This is what
+ * removes the second Dock icon: previously we spawned Electron-as-Node to run
+ * `next start`, which macOS showed as its own tile. Running Next's request
+ * handler inside the Electron main process keeps everything under one icon and
+ * starts faster.
+ */
 async function startWeb(): Promise<void> {
   webPort = await freePort();
-  const web = resolveWeb();
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    NODE_ENV: 'production',
-    PORT: String(webPort),
-    HOSTNAME: '127.0.0.1',
-    // The web BFF proxies API calls here; auth gate is bypassed in the desktop.
-    API_INTERNAL_URL: `http://127.0.0.1:${apiPort}`,
-    DESKTOP_MODE: '1',
-  };
-  const args = [web.entry, 'start', '-p', String(webPort)];
-  // In dev we have a real `node`; when packaged we run Node via Electron.
-  const cmd = app.isPackaged ? process.execPath : 'node';
-  if (app.isPackaged) env.ELECTRON_RUN_AS_NODE = '1';
-  webProc = spawn(cmd, args, { cwd: web.cwd, env, stdio: 'inherit' });
-  webProc.on('exit', (code) => {
-    if (code && code !== 0 && !quitting) {
-      dialog.showErrorBox(APP_NAME, `The UI server exited unexpectedly (code ${code}).`);
-    }
-  });
-  await waitForHttp(`http://127.0.0.1:${webPort}`, 30_000);
-}
+  const dir = webRoot();
+  process.env.NODE_ENV = 'production';
+  process.env.DESKTOP_MODE = '1';
+  process.env.API_INTERNAL_URL = `http://127.0.0.1:${apiPort}`;
 
-async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      await fetch(url, { method: 'HEAD' });
-      return;
-    } catch {
-      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${url}`);
-      await new Promise((r) => setTimeout(r, 300));
-    }
-  }
+  // Resolve `next` from the web app's own node_modules (not bundled into main).
+  const webRequire = createRequire(join(dir, 'package.json'));
+  const nextFactory = webRequire('next') as (opts: Record<string, unknown>) => {
+    prepare(): Promise<void>;
+    getRequestHandler(): (req: unknown, res: unknown) => void;
+  };
+  const nextApp = nextFactory({ dev: false, dir, hostname: '127.0.0.1', port: webPort });
+  await nextApp.prepare();
+  const handler = nextApp.getRequestHandler();
+  webServer = createHttpServer((req, res) => handler(req, res));
+  await new Promise<void>((resolve, reject) => {
+    webServer!.on('error', reject);
+    webServer!.listen(webPort, '127.0.0.1', resolve);
+  });
 }
 
 function createMainWindow(): void {
+  // Sized so the full navbar (logo + all items + Settings) fits on first launch,
+  // but never larger than the screen's work area.
+  const { workAreaSize } = require('electron').screen.getPrimaryDisplay();
+  const width = Math.min(1440, workAreaSize.width);
+  const height = Math.min(900, workAreaSize.height);
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width,
+    height,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0b1020',
@@ -125,19 +116,27 @@ function createMainWindow(): void {
       preload: join(__dirname, '..', 'main-preload.cjs'),
     },
   });
-  void mainWindow.loadURL(`http://127.0.0.1:${webPort}`);
+  // Show a splash immediately; boot() swaps in the app URL once the server is up.
+  // On re-activate (dock click) the server is already running, so load the app.
+  if (webPort) void mainWindow.loadURL(`http://127.0.0.1:${webPort}`);
+  else void mainWindow.loadFile(join(__dirname, '..', 'splash.html'));
   // Keep the OS window title as the app name rather than the web page title.
   mainWindow.on('page-title-updated', (e) => e.preventDefault());
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   // Open external links in the system browser, keep internal nav in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith(`http://127.0.0.1:${webPort}`)) {
+    if (!webPort || !url.startsWith(`http://127.0.0.1:${webPort}`)) {
       void shell.openExternal(url);
       return { action: 'deny' };
     }
     return { action: 'allow' };
   });
   mainWindow.on('closed', () => (mainWindow = null));
+}
+
+/** Swap the splash for the running web app. */
+function loadWebApp(): void {
+  void mainWindow?.loadURL(`http://127.0.0.1:${webPort}`);
 }
 
 function openSettingsWindow(): void {
@@ -238,10 +237,12 @@ async function boot(): Promise<void> {
   applyEnv(loadSettings());
   process.env.QA_GENERATOR_ROOT = generatorRoot();
   buildMenu();
+  // Show the window with a splash right away, then bring up the servers.
+  createMainWindow();
   try {
     await startApi();
     await startWeb();
-    createMainWindow();
+    loadWebApp();
   } catch (err) {
     dialog.showErrorBox(`${APP_NAME} failed to start`, String(err instanceof Error ? err.message : err));
     app.quit();
@@ -257,8 +258,7 @@ app.whenReady().then(boot).catch((e) => {
 });
 
 app.on('before-quit', () => {
-  quitting = true;
-  webProc?.kill();
+  webServer?.close();
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
