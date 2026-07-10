@@ -6,7 +6,7 @@
 // then strip the few remaining .bin symlinks. electron-builder then ships
 // `build-web/` verbatim as resources/web — real files only.
 import { execSync } from 'node:child_process';
-import { rmSync, readdirSync, lstatSync } from 'node:fs';
+import { rmSync, readdirSync, lstatSync, existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,4 +43,43 @@ function strip(dir) {
   }
 }
 strip(out);
-console.log(`Assembled web (stripped ${removed} symlink(s)).`);
+
+// Drop build-time-only artifacts that `next start` never reads. The webpack
+// build cache alone is ~450 MB; none of this affects the running app.
+function sizeMB(p) {
+  try {
+    return Math.round(Number(execSync(`du -sk "${p}"`).toString().split('\t')[0]) / 1024);
+  } catch {
+    return 0;
+  }
+}
+let freed = 0;
+for (const rel of ['.next/cache', '.next/trace', '.next/types', 'tsconfig.tsbuildinfo']) {
+  const p = join(out, rel);
+  if (existsSync(p)) {
+    freed += sizeMB(p);
+    rmSync(p, { recursive: true, force: true });
+  }
+}
+
+// Strip source maps (only useful for debugging the original source).
+let maps = 0;
+function stripMaps(dir) {
+  for (const entry of readdirSync(dir)) {
+    const p = join(dir, entry);
+    let st;
+    try {
+      st = statSync(p);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) stripMaps(p);
+    else if (entry.endsWith('.map')) {
+      rmSync(p, { force: true });
+      maps += 1;
+    }
+  }
+}
+stripMaps(out);
+
+console.log(`Assembled web (stripped ${removed} symlink(s), ${maps} source map(s), ~${freed} MB of build cache).`);

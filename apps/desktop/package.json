@@ -9,10 +9,11 @@
     "build:main": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/main.js --external:electron --log-level=warning",
     "build:web": "pnpm --filter @qa-prism/web build && node scripts/assemble-web.mjs",
     "build:web:dev": "pnpm --filter @qa-prism/web build",
+    "build:icon": "node scripts/make-icon.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "pnpm run build:main && pnpm run build:web:dev && electron .",
     "start": "electron .",
-    "dist:mac": "pnpm run build:main && pnpm run build:web && electron-builder --mac"
+    "dist:mac": "pnpm run build:icon && pnpm run build:main && pnpm run build:web && electron-builder --mac"
   },
   "devDependencies": {
     "@qa-prism/breakage-analyser": "workspace:*",
@@ -32,7 +33,7 @@
     "appId": "com.codeandtheory.qastudio",
     "productName": "QA Studio",
     "directories": { "output": "release" },
-    "files": ["dist/**/*", "preload.cjs", "main-preload.cjs", "settings.html", "package.json"],
+    "files": ["dist/**/*", "preload.cjs", "main-preload.cjs", "settings.html", "splash.html", "package.json"],
     "extraResources": [
       { "from": "build-web", "to": "web" },
       { "from": "../../packages/generator/registry", "to": "generator/registry" },
@@ -41,6 +42,7 @@
     "mac": {
       "target": ["dmg", "zip"],
       "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
       "artifactName": "QA-Studio-${version}-${arch}.${ext}"
     },
     "dmg": { "title": "QA Studio ${version}" }
